@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# InclusiveTalk
 
-## Getting Started
+Веб-приложение живых субтитров для глухих и слабослышащих студентов в учебных классах.
 
-First, run the development server:
+## Что это
 
+Преподаватель ведёт урок и говорит как обычно. Его речь распознаётся и в реальном времени появляется как субтитры на устройстве студента. Студент подключается к уроку по 6-значному коду комнаты.
+
+## Технологии
+
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS
+- **Backend:** Node.js, Fastify, WebSocket
+- **Распознавание речи:** Web Speech API (ru-RU)
+- **Состояние:** в памяти сервера (для прототипа)
+
+## Запуск локально
+
+Фронтенд (порт 3000):
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Бэкенд (порт 3001):
+```bash
+cd backend
+npm install
+npm run dev
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Откройте http://localhost:3000
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Roadmap
 
-## Learn More
+- ✅ Фаза 1: Живые субтитры лекций (MVP)
+- 🚧 Фаза 2: Обратная связь от студента (готовые сигналы, ИИ-вопросы по теме)
+- 📋 Фаза 3: Распознавание Русского Жестового Языка (МediaPipe + Slovo dataset)
 
-To learn more about Next.js, take a look at the following resources:
+## Автор
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Prince (Nurislam Amirkhanov) — Software instructor , CIS regіon
