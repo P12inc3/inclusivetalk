@@ -4,6 +4,13 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
 type LessonState = 'idle' | 'connecting' | 'active' | 'stopped' | 'error'
+type Language = 'ru-RU' | 'kk-KZ' | 'en-US'
+
+const LANGUAGE_LABELS: Record<Language, string> = {
+  'ru-RU': 'Русский',
+  'kk-KZ': 'Қазақша',
+  'en-US': 'English',
+}
 
 function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString()
@@ -14,6 +21,7 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws'
 
 export default function TeacherPage() {
   const [state, setState] = useState<LessonState>('idle')
+  const [language, setLanguage] = useState<Language>('ru-RU')
   const [code, setCode] = useState('')
   const [transcript, setTranscript] = useState('')
   const [connected, setConnected] = useState(false)
@@ -85,7 +93,7 @@ export default function TeacherPage() {
 
           // Start speech recognition after confirmed registration
           const recognition = new SpeechAPI()
-          recognition.lang = 'ru-RU'
+          recognition.lang = language
           recognition.continuous = true
           recognition.interimResults = true
           recognitionRef.current = recognition
@@ -148,7 +156,7 @@ export default function TeacherPage() {
         setErrorMsg('Не удалось подключиться к серверу')
       }
     }
-  }, [stopAll])
+  }, [stopAll, language])
 
   const stopLesson = useCallback(() => {
     console.log('[WS] Stopping lesson')
@@ -182,6 +190,24 @@ export default function TeacherPage() {
             ← На главную
           </Link>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Преподаватель</h1>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-500 dark:text-gray-400">Язык урока</p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              {(['ru-RU', 'kk-KZ', 'en-US'] as const).map(lang => (
+                <button
+                  key={lang}
+                  onClick={() => setLanguage(lang)}
+                  className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    language === lang
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-500'
+                  }`}
+                >
+                  {LANGUAGE_LABELS[lang]}
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={startLesson}
             className="block mx-auto px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg font-medium rounded-2xl transition-colors"
@@ -259,9 +285,12 @@ export default function TeacherPage() {
         </div>
 
         {state === 'active' && (
-          <div className="flex items-center gap-2 text-red-500">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-sm font-medium">Идёт запись</span>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-red-500">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-sm font-medium">Идёт запись</span>
+            </div>
+            <p className="text-xs text-gray-400 pl-4">Язык: {LANGUAGE_LABELS[language]}</p>
           </div>
         )}
       </div>
