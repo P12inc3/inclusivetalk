@@ -4,19 +4,19 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
-    "start": "node dist/server.js"
+    "build": "echo 'no build needed'",
+    "start": "tsx src/server.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11",
     "@fastify/websocket": "^11",
     "fastify": "^5",
-    "ws": "^8"
+    "ws": "^8",
+    "tsx": "^4",
+    "typescript": "^5"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/ws": "^8",
-    "tsx": "^4",
-    "typescript": "^5"
+    "@types/ws": "^8"
   }
 }
