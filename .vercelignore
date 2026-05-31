@@ -1,2 +1,2 @@
-echo "backend/" > .vercelignore
-echo "ml_training/" >> .vercelignore
+backend/
+ml_training/
