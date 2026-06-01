@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocketPlugin from '@fastify/websocket'
 import { WebSocket } from 'ws'
+import { randomUUID } from 'node:crypto'
 
 // ── Room state ────────────────────────────────────────────────────────────────
 
@@ -13,6 +14,7 @@ interface Room {
 interface SocketMeta {
   code: string
   role: 'teacher' | 'student'
+  studentId?: string
 }
 
 const rooms = new Map<string, Room>()
@@ -69,8 +71,9 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
             socket.close()
             return
           }
+          const studentId = randomUUID()
           room.students.add(socket)
-          socketMeta.set(socket, { code, role: 'student' })
+          socketMeta.set(socket, { code, role: 'student', studentId })
           send(socket, { type: 'joined' })
           app.log.info(`Student joined room ${code} (total: ${room.students.size})`)
         }
@@ -83,6 +86,25 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
         if (!room) return
         broadcastStudents(room, { type: 'transcript', text: msg.text })
         app.log.info(`Broadcast to ${room.students.size} students in room ${meta.code}`)
+
+      // ── signal (student → teacher) ────────────────────────────────────────
+      } else if (msg.type === 'signal') {
+        const meta = socketMeta.get(socket)
+        if (!meta || meta.role !== 'student') return
+        const room = rooms.get(meta.code)
+        if (!room) return
+        const signalType = String(msg.signalType ?? '')
+        const valid = ['confused', 'repeat', 'slow', 'question', 'understood']
+        if (!valid.includes(signalType)) return
+        if (room.teacher) {
+          send(room.teacher, {
+            type: 'signal',
+            signalType,
+            studentId: meta.studentId,
+            timestamp: Date.now(),
+          })
+        }
+        app.log.info(`Signal '${signalType}' from student in room ${meta.code}`)
       }
 
     } catch {
