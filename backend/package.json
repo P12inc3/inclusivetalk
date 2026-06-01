@@ -13,7 +13,9 @@
     "fastify": "^5",
     "ws": "^8",
     "tsx": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "openai": "^4",
+    "dotenv": "^16"
   },
   "devDependencies": {
     "@types/node": "^20",

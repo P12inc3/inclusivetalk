@@ -1,8 +1,10 @@
+import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import websocketPlugin from '@fastify/websocket'
 import { WebSocket } from 'ws'
 import { randomUUID } from 'node:crypto'
+import { generateQuestions } from './ai.js'
 
 // ── Room state ────────────────────────────────────────────────────────────────
 
@@ -16,6 +18,7 @@ interface Student {
 interface Room {
   teacher: WebSocket | null
   students: Map<string, Student>  // key = studentId
+  language: 'ru' | 'kk' | 'en'
 }
 
 interface SocketMeta {
@@ -61,8 +64,12 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
         if (!role || !code) return
 
         if (role === 'teacher') {
+          const rawLang = String(msg.language ?? 'ru')
+          const language = (['ru', 'kk', 'en'].includes(rawLang) ? rawLang : 'ru') as 'ru' | 'kk' | 'en'
           if (!rooms.has(code)) {
-            rooms.set(code, { teacher: null, students: new Map<string, Student>() })
+            rooms.set(code, { teacher: null, students: new Map<string, Student>(), language })
+          } else {
+            rooms.get(code)!.language = language
           }
           const room = rooms.get(code)!
           room.teacher = socket
@@ -93,7 +100,7 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
           const student: Student = { id: studentId, name, socket, joinedAt }
           room.students.set(studentId, student)
           socketMeta.set(socket, { code, role: 'student', name, studentId })
-          send(socket, { type: 'joined', studentId })
+          send(socket, { type: 'joined', studentId, language: room.language })
           if (room.teacher) {
             send(room.teacher, { type: 'student_joined', studentId, name, joinedAt })
           }
@@ -175,6 +182,18 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
     }
   })
 })
+
+// ── AI question generation ────────────────────────────────────────────────────
+
+app.post<{ Body: { transcript?: string; language?: string } }>(
+  '/api/generate-questions',
+  async (request, reply) => {
+    const { transcript = '', language = 'ru' } = request.body ?? {}
+    const lang = (['ru', 'kk', 'en'].includes(language) ? language : 'ru') as 'ru' | 'kk' | 'en'
+    const questions = await generateQuestions(transcript, lang)
+    return reply.send({ questions })
+  },
+)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

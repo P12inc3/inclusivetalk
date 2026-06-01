@@ -13,6 +13,12 @@ const LANGUAGE_LABELS: Record<Language, string> = {
   'en-US': 'English',
 }
 
+const LANGUAGE_SHORT: Record<Language, 'ru' | 'kk' | 'en'> = {
+  'ru-RU': 'ru',
+  'kk-KZ': 'kk',
+  'en-US': 'en',
+}
+
 const SIGNAL_CONFIG: Record<SignalType, { icon: string; label: string; bg: string }> = {
   confused:    { icon: '🤔', label: 'Не понял',   bg: 'bg-amber-500'   },
   repeat:      { icon: '🔁', label: 'Повторите',  bg: 'bg-blue-500'    },
@@ -146,7 +152,7 @@ export default function TeacherPage() {
     wsRef.current = ws
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'register', role: 'teacher', code: roomCode }))
+      ws.send(JSON.stringify({ type: 'register', role: 'teacher', code: roomCode, language: LANGUAGE_SHORT[language] }))
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {

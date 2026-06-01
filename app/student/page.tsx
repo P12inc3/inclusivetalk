@@ -7,6 +7,10 @@ import type { SignalType } from '../types'
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws'
+const API_URL = WS_URL
+  .replace(/^wss:\/\//, 'https://')
+  .replace(/^ws:\/\//, 'http://')
+  .replace(/\/ws$/, '')
 const LS_NAME_KEY = 'inclusivetalk_student_name'
 
 const SIGNALS: Array<{ type: SignalType; icon: string; label: string; color: string }> = [
@@ -37,11 +41,18 @@ export default function StudentPage() {
   const [questionSent, setQuestionSent] = useState(false)
   const [questionCooldown, setQuestionCooldown] = useState(false)
 
+  const [lessonLanguage, setLessonLanguage] = useState<'ru' | 'kk' | 'en'>('ru')
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiQuestions, setAiQuestions] = useState<string[]>([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiCooldown, setAiCooldown] = useState(false)
+
   const wsRef = useRef<WebSocket | null>(null)
   const stateRef = useRef<StudentState>('idle')
   const lessonEndedRef = useRef(false)
   const subtitlesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const recentTranscriptRef = useRef<string[]>([])
 
   // Load saved name from localStorage on mount
   useEffect(() => {
@@ -67,6 +78,11 @@ export default function StudentPage() {
     setQuestionText('')
     setQuestionSent(false)
     setQuestionCooldown(false)
+    setAiPanelOpen(false)
+    setAiQuestions([])
+    setAiLoading(false)
+    setAiCooldown(false)
+    recentTranscriptRef.current = []
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }, [])
 
@@ -101,6 +117,8 @@ export default function StudentPage() {
         const msg = JSON.parse(event.data) as Record<string, unknown>
         if (msg.type === 'joined') {
           try { localStorage.setItem(LS_NAME_KEY, name) } catch { /* */ }
+          const rawLang = String(msg.language ?? 'ru')
+          setLessonLanguage((['ru', 'kk', 'en'].includes(rawLang) ? rawLang : 'ru') as 'ru' | 'kk' | 'en')
           setConnectedCode(codeInput)
           setConnectedName(name)
           setStateSynced('active')
@@ -111,7 +129,9 @@ export default function StudentPage() {
           ws.close()
           wsRef.current = null
         } else if (msg.type === 'transcript') {
-          setSubtitles(prev => [...prev, String(msg.text ?? '')])
+          const text = String(msg.text ?? '')
+          recentTranscriptRef.current = [...recentTranscriptRef.current, text].slice(-5)
+          setSubtitles(prev => [...prev, text])
         } else if (msg.type === 'room_closed') {
           lessonEndedRef.current = true
           setLessonEnded(true)
@@ -189,6 +209,31 @@ export default function StudentPage() {
       setQuestionCooldown(false)
     }, 3000)
   }, [questionText, questionCooldown, lessonEnded, connectedCode])
+
+  const fetchAIQuestions = useCallback(async () => {
+    if (aiCooldown || aiLoading || lessonEnded) return
+    setAiLoading(true)
+    setAiPanelOpen(true)
+    setQuestionOpen(false)
+    setAiQuestions([])
+    try {
+      const transcript = recentTranscriptRef.current.join(' ')
+      const res = await fetch(`${API_URL}/api/generate-questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript, language: lessonLanguage }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json() as { questions?: string[] }
+      setAiQuestions(Array.isArray(data.questions) ? data.questions : [])
+    } catch {
+      setAiQuestions([])
+    } finally {
+      setAiLoading(false)
+      setAiCooldown(true)
+      setTimeout(() => setAiCooldown(false), 10_000)
+    }
+  }, [aiCooldown, aiLoading, lessonEnded, lessonLanguage])
 
   // ── Idle ───────────────────────────────────────────────────────────────────
   if (state === 'idle') {
@@ -300,7 +345,7 @@ export default function StudentPage() {
   }
 
   // ── Active ─────────────────────────────────────────────────────────────────
-  const bottomPadding = questionOpen ? 280 : 130
+  const bottomPadding = (questionOpen || aiPanelOpen) ? 280 : 130
 
   return (
     <main className="min-h-screen flex flex-col bg-gray-950">
@@ -349,6 +394,40 @@ export default function StudentPage() {
 
       {/* Fixed bottom panel */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-sm border-t border-gray-800">
+
+        {aiPanelOpen && (
+          <div className="px-3 pt-3 pb-2 border-b border-gray-800">
+            <div className="max-w-2xl mx-auto">
+              {aiLoading ? (
+                <div className="flex items-center justify-center py-4 gap-2">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm text-gray-400">Генерирую вопросы...</span>
+                </div>
+              ) : aiQuestions.length === 0 ? (
+                <p className="text-center text-sm text-gray-500 py-3">
+                  Не удалось сгенерировать вопросы
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-gray-500 mb-2">Выберите вопрос или напишите свой:</p>
+                  {aiQuestions.map((q, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setQuestionText(q)
+                        setQuestionOpen(true)
+                        setAiPanelOpen(false)
+                      }}
+                      className="w-full text-left text-sm text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {questionOpen && (
           <div className="px-3 pt-3 pb-2 border-b border-gray-800">
@@ -404,14 +483,25 @@ export default function StudentPage() {
               ✅ Отправлено!
             </p>
           ) : (
-            <button
-              onClick={() => !lessonEnded && setQuestionOpen(v => !v)}
-              disabled={lessonEnded}
-              className="w-full text-sm text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
-            >
-              <span>✍</span>
-              <span>{questionOpen ? 'Свернуть' : 'Написать вопрос'}</span>
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={fetchAIQuestions}
+                disabled={lessonEnded || aiCooldown || aiLoading}
+                className="flex-1 text-sm text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
+              >
+                <span>💡</span>
+                <span>{aiLoading ? 'Загрузка...' : aiCooldown ? 'Подождите...' : 'Подсказать вопрос'}</span>
+              </button>
+              <div className="w-px h-4 bg-gray-700 shrink-0" />
+              <button
+                onClick={() => { if (!lessonEnded) { setQuestionOpen(v => !v); setAiPanelOpen(false) } }}
+                disabled={lessonEnded}
+                className="flex-1 text-sm text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
+              >
+                <span>✍</span>
+                <span>{questionOpen ? 'Свернуть' : 'Написать вопрос'}</span>
+              </button>
+            </div>
           )}
         </div>
 
