@@ -105,6 +105,24 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
           })
         }
         app.log.info(`Signal '${signalType}' from student in room ${meta.code}`)
+
+      // ── question (student → teacher) ──────────────────────────────────────
+      } else if (msg.type === 'question') {
+        const meta = socketMeta.get(socket)
+        if (!meta || meta.role !== 'student') return
+        const room = rooms.get(meta.code)
+        if (!room) return
+        const text = String(msg.text ?? '').trim()
+        if (!text || text.length > 500) return
+        if (room.teacher) {
+          send(room.teacher, {
+            type: 'question',
+            text,
+            studentId: meta.studentId,
+            timestamp: Date.now(),
+          })
+        }
+        app.log.info(`Question from student in room ${meta.code}: ${text.slice(0, 50)}`)
       }
 
     } catch {

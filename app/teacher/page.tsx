@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import type { Signal, SignalType } from '../types'
+import type { FeedbackItem, SignalType } from '../types'
 
 type LessonState = 'idle' | 'connecting' | 'active' | 'stopped' | 'error'
 type Language = 'ru-RU' | 'kk-KZ' | 'en-US'
@@ -60,9 +60,9 @@ export default function TeacherPage() {
   const [copied, setCopied] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  const [signals, setSignals] = useState<Signal[]>([])
+  const [signals, setSignals] = useState<FeedbackItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
-  const [toast, setToast] = useState<Signal | null>(null)
+  const [toast, setToast] = useState<FeedbackItem | null>(null)
   const [signalPanelOpen, setSignalPanelOpen] = useState(false)
   // tick forces re-render every 30s so relative timestamps stay fresh
   const [, setTick] = useState(0)
@@ -180,20 +180,38 @@ export default function TeacherPage() {
           const signalType = msg.signalType as SignalType
           if (!VALID_SIGNAL_TYPES.includes(signalType)) return
 
-          const newSignal: Signal = {
+          const item: FeedbackItem = {
             id: crypto.randomUUID(),
-            type: signalType,
+            kind: 'signal',
+            signalType,
             timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Date.now(),
             studentId: String(msg.studentId ?? ''),
           }
 
-          setSignals(prev => [newSignal, ...prev].slice(0, 10))
+          setSignals(prev => [item, ...prev].slice(0, 10))
           setUnreadCount(prev => prev + 1)
-
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-          setToast(newSignal)
+          setToast(item)
           toastTimerRef.current = setTimeout(() => setToast(null), 3000)
+          playBeep()
 
+        } else if (msg.type === 'question') {
+          const text = String(msg.text ?? '').trim()
+          if (!text) return
+
+          const item: FeedbackItem = {
+            id: crypto.randomUUID(),
+            kind: 'question',
+            questionText: text,
+            timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Date.now(),
+            studentId: String(msg.studentId ?? ''),
+          }
+
+          setSignals(prev => [item, ...prev].slice(0, 10))
+          setUnreadCount(prev => prev + 1)
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+          setToast(item)
+          toastTimerRef.current = setTimeout(() => setToast(null), 3000)
           playBeep()
         }
       } catch { /* ignore malformed */ }
@@ -353,10 +371,26 @@ export default function TeacherPage() {
           Нет сигналов
         </p>
       ) : (
-        signals.map(sig => {
-          const cfg = SIGNAL_CONFIG[sig.type]
+        signals.map(item => {
+          if (item.kind === 'question') {
+            return (
+              <div key={item.id} className="flex gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white text-sm shrink-0">
+                  ✍
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Вопрос от студента</p>
+                  <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed break-words whitespace-pre-wrap">
+                    «{item.questionText}»
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">{formatTime(item.timestamp)}</p>
+                </div>
+              </div>
+            )
+          }
+          const cfg = SIGNAL_CONFIG[item.signalType!]
           return (
-            <div key={sig.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
+            <div key={item.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
               <span className={`w-8 h-8 flex items-center justify-center rounded-full text-white text-sm shrink-0 ${cfg.bg}`}>
                 {cfg.icon}
               </span>
@@ -364,7 +398,7 @@ export default function TeacherPage() {
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
                   Студент: {cfg.label}
                 </p>
-                <p className="text-xs text-gray-400">{formatTime(sig.timestamp)}</p>
+                <p className="text-xs text-gray-400">{formatTime(item.timestamp)}</p>
               </div>
             </div>
           )
@@ -512,14 +546,20 @@ export default function TeacherPage() {
           role="alert"
           onClick={() => setToast(null)}
           className={[
-            'fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl cursor-pointer',
-            'text-white transition-all',
-            SIGNAL_CONFIG[toast.type].bg,
+            'fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl cursor-pointer max-w-xs',
+            'text-white',
+            toast.kind === 'question' ? 'bg-blue-600' : SIGNAL_CONFIG[toast.signalType!].bg,
           ].join(' ')}
         >
-          <span className="text-xl">{SIGNAL_CONFIG[toast.type].icon}</span>
-          <div>
-            <p className="font-medium text-sm">Студент: {SIGNAL_CONFIG[toast.type].label}</p>
+          <span className="text-xl shrink-0">
+            {toast.kind === 'question' ? '✍' : SIGNAL_CONFIG[toast.signalType!].icon}
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium text-sm leading-snug break-words">
+              {toast.kind === 'question'
+                ? `Вопрос: ${toast.questionText!.length > 50 ? toast.questionText!.slice(0, 50) + '…' : toast.questionText}`
+                : `Студент: ${SIGNAL_CONFIG[toast.signalType!].label}`}
+            </p>
           </div>
         </div>
       )}
