@@ -7,6 +7,7 @@ import type { SignalType } from '../types'
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws'
+const LS_NAME_KEY = 'inclusivetalk_student_name'
 
 const SIGNALS: Array<{ type: SignalType; icon: string; label: string; color: string }> = [
   { type: 'confused',    icon: '🤔', label: 'Не понял',  color: 'bg-amber-500  active:bg-amber-600'   },
@@ -20,17 +21,17 @@ const MAX_QUESTION_LEN = 500
 
 export default function StudentPage() {
   const [state, setState] = useState<StudentState>('idle')
+  const [nameInput, setNameInput] = useState('')
   const [codeInput, setCodeInput] = useState('')
   const [connectedCode, setConnectedCode] = useState('')
+  const [connectedName, setConnectedName] = useState('')
   const [subtitles, setSubtitles] = useState<string[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [lessonEnded, setLessonEnded] = useState(false)
 
-  // Quick-signal state
   const [signalCooldown, setSignalCooldown] = useState(false)
   const [lastSignal, setLastSignal] = useState<SignalType | null>(null)
 
-  // Question panel state
   const [questionOpen, setQuestionOpen] = useState(false)
   const [questionText, setQuestionText] = useState('')
   const [questionSent, setQuestionSent] = useState(false)
@@ -41,6 +42,14 @@ export default function StudentPage() {
   const lessonEndedRef = useRef(false)
   const subtitlesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load saved name from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LS_NAME_KEY)
+      if (saved) setNameInput(saved)
+    } catch { /* localStorage unavailable */ }
+  }, [])
 
   const setStateSynced = useCallback((s: StudentState) => {
     stateRef.current = s
@@ -62,8 +71,13 @@ export default function StudentPage() {
   }, [])
 
   const connect = useCallback(() => {
+    const name = nameInput.trim()
+    if (!name) {
+      setErrorMsg('Введите ваше имя')
+      return
+    }
     if (!/^\d{6}$/.test(codeInput)) {
-      setErrorMsg('Введите ровно 6 цифр')
+      setErrorMsg('Введите код урока (6 цифр)')
       return
     }
     setErrorMsg('')
@@ -79,14 +93,16 @@ export default function StudentPage() {
     wsRef.current = ws
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'register', role: 'student', code: codeInput }))
+      ws.send(JSON.stringify({ type: 'register', role: 'student', code: codeInput, name }))
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
       try {
         const msg = JSON.parse(event.data) as Record<string, unknown>
         if (msg.type === 'joined') {
+          try { localStorage.setItem(LS_NAME_KEY, name) } catch { /* */ }
           setConnectedCode(codeInput)
+          setConnectedName(name)
           setStateSynced('active')
         } else if (msg.type === 'error') {
           setErrorMsg(String(msg.message ?? 'Ошибка подключения'))
@@ -115,7 +131,7 @@ export default function StudentPage() {
     }
 
     ws.onerror = () => { /* onclose handles it */ }
-  }, [codeInput, setStateSynced, resetQuestionState])
+  }, [nameInput, codeInput, setStateSynced, resetQuestionState])
 
   const disconnect = useCallback(() => {
     if (wsRef.current) {
@@ -130,6 +146,7 @@ export default function StudentPage() {
     setState('idle')
     setSubtitles([])
     setConnectedCode('')
+    setConnectedName('')
     setSignalCooldown(false)
     setLastSignal(null)
     resetQuestionState()
@@ -175,6 +192,7 @@ export default function StudentPage() {
 
   // ── Idle ───────────────────────────────────────────────────────────────────
   if (state === 'idle') {
+    const canConnect = nameInput.trim().length > 0 && codeInput.length === 6
     return (
       <main className="min-h-screen flex items-center justify-center px-4 bg-white dark:bg-gray-950">
         <div className="w-full max-w-sm space-y-6">
@@ -184,33 +202,63 @@ export default function StudentPage() {
             </Link>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Студент</h1>
           </div>
-          <div className="space-y-3">
-            <label
-              htmlFor="code-input"
-              className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-            >
-              Код урока
-            </label>
-            <input
-              id="code-input"
-              type="tel"
-              inputMode="numeric"
-              maxLength={6}
-              value={codeInput}
-              onChange={e => {
-                setCodeInput(e.target.value.replace(/\D/g, ''))
-                setErrorMsg('')
-              }}
-              onKeyDown={e => e.key === 'Enter' && connect()}
-              placeholder="123456"
-              className="w-full text-4xl font-mono text-center py-4 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
-            />
+
+          <div className="space-y-4">
+            {/* Name input */}
+            <div className="space-y-2">
+              <label
+                htmlFor="name-input"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Ваше имя
+              </label>
+              <input
+                id="name-input"
+                type="text"
+                maxLength={50}
+                value={nameInput}
+                onChange={e => {
+                  setNameInput(e.target.value)
+                  setErrorMsg('')
+                }}
+                onKeyDown={e => e.key === 'Enter' && connect()}
+                placeholder="Например, Айгерим"
+                className="w-full text-xl py-3 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
+                autoComplete="name"
+              />
+            </div>
+
+            {/* Code input */}
+            <div className="space-y-2">
+              <label
+                htmlFor="code-input"
+                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Код урока
+              </label>
+              <input
+                id="code-input"
+                type="tel"
+                inputMode="numeric"
+                maxLength={6}
+                value={codeInput}
+                onChange={e => {
+                  setCodeInput(e.target.value.replace(/\D/g, ''))
+                  setErrorMsg('')
+                }}
+                onKeyDown={e => e.key === 'Enter' && connect()}
+                placeholder="123456"
+                className="w-full text-4xl font-mono text-center py-4 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+
             {errorMsg && (
               <p className="text-sm text-red-600 text-center">{errorMsg}</p>
             )}
+
             <button
               onClick={connect}
-              disabled={codeInput.length !== 6}
+              disabled={!canConnect}
               className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-400 text-white text-lg font-medium rounded-xl transition-colors"
             >
               Подключиться
@@ -252,33 +300,31 @@ export default function StudentPage() {
   }
 
   // ── Active ─────────────────────────────────────────────────────────────────
-  // Bottom panel height: signals ~80px + toggle ~36px + textarea area ~148px (when open)
   const bottomPadding = questionOpen ? 280 : 130
 
   return (
     <main className="min-h-screen flex flex-col bg-gray-950">
       <header className="sticky top-0 flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 z-10">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           {lessonEnded ? (
             <span className="text-sm text-gray-400 font-medium">Урок завершён</span>
           ) : (
             <>
-              <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-sm text-gray-300 font-medium">
-                Подключено #{connectedCode}
+              <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
+              <span className="text-sm text-gray-300 font-medium truncate">
+                {connectedName} · #{connectedCode}
               </span>
             </>
           )}
         </div>
         <button
           onClick={disconnect}
-          className="text-sm text-gray-400 hover:text-white transition-colors px-3 py-1 rounded-lg hover:bg-gray-800"
+          className="text-sm text-gray-400 hover:text-white transition-colors px-3 py-1 rounded-lg hover:bg-gray-800 shrink-0 ml-2"
         >
           Отключиться
         </button>
       </header>
 
-      {/* Subtitles scroll area */}
       <div
         className="flex-1 overflow-y-auto px-5 py-8 space-y-6"
         style={{ paddingBottom: `${bottomPadding}px` }}
@@ -304,7 +350,6 @@ export default function StudentPage() {
       {/* Fixed bottom panel */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-sm border-t border-gray-800">
 
-        {/* Question textarea — shown when open */}
         {questionOpen && (
           <div className="px-3 pt-3 pb-2 border-b border-gray-800">
             <div className="max-w-2xl mx-auto">
@@ -353,7 +398,6 @@ export default function StudentPage() {
           </div>
         )}
 
-        {/* Toggle row */}
         <div className="max-w-2xl mx-auto px-3 py-2 border-b border-gray-800">
           {questionSent ? (
             <p className="text-center text-sm text-green-400 font-medium py-0.5">
@@ -371,7 +415,6 @@ export default function StudentPage() {
           )}
         </div>
 
-        {/* Signal buttons */}
         <div className="px-2 py-2">
           <div className="grid grid-cols-5 gap-1 max-w-2xl mx-auto">
             {SIGNALS.map(({ type, icon, label, color }) => {

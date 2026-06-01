@@ -7,4 +7,11 @@ export interface FeedbackItem {
   questionText?: string
   timestamp: number
   studentId: string
+  studentName: string
+}
+
+export interface StudentInfo {
+  studentId: string
+  name: string
+  joinedAt: number
 }

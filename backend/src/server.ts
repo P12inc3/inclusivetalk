@@ -6,14 +6,22 @@ import { randomUUID } from 'node:crypto'
 
 // ── Room state ────────────────────────────────────────────────────────────────
 
+interface Student {
+  id: string
+  name: string
+  socket: WebSocket
+  joinedAt: number
+}
+
 interface Room {
   teacher: WebSocket | null
-  students: Set<WebSocket>
+  students: Map<string, Student>  // key = studentId
 }
 
 interface SocketMeta {
   code: string
   role: 'teacher' | 'student'
+  name?: string
   studentId?: string
 }
 
@@ -29,7 +37,7 @@ function send(socket: WebSocket, msg: object): void {
 }
 
 function broadcastStudents(room: Room, msg: object): void {
-  for (const s of room.students) send(s, msg)
+  for (const student of room.students.values()) send(student.socket, msg)
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -39,10 +47,8 @@ const app = Fastify({ logger: { level: 'info' } })
 await app.register(cors, { origin: true })
 await app.register(websocketPlugin)
 
-// Status endpoint
 app.get('/', async () => ({ status: 'ok', rooms: rooms.size }))
 
-// WebSocket endpoint
 app.get('/ws', { websocket: true }, (socket: WebSocket) => {
   socket.on('message', (raw) => {
     try {
@@ -56,12 +62,17 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
 
         if (role === 'teacher') {
           if (!rooms.has(code)) {
-            rooms.set(code, { teacher: null, students: new Set<WebSocket>() })
+            rooms.set(code, { teacher: null, students: new Map<string, Student>() })
           }
           const room = rooms.get(code)!
           room.teacher = socket
           socketMeta.set(socket, { code, role: 'teacher' })
-          send(socket, { type: 'registered' })
+          const studentsList = Array.from(room.students.values()).map(s => ({
+            studentId: s.id,
+            name: s.name,
+            joinedAt: s.joinedAt,
+          }))
+          send(socket, { type: 'registered', students: studentsList })
           app.log.info(`Teacher registered room ${code}`)
 
         } else if (role === 'student') {
@@ -71,11 +82,22 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
             socket.close()
             return
           }
+          const name = String(msg.name ?? '').trim()
+          if (!name || name.length > 50) {
+            send(socket, { type: 'error', message: 'Имя обязательно' })
+            socket.close()
+            return
+          }
           const studentId = randomUUID()
-          room.students.add(socket)
-          socketMeta.set(socket, { code, role: 'student', studentId })
-          send(socket, { type: 'joined' })
-          app.log.info(`Student joined room ${code} (total: ${room.students.size})`)
+          const joinedAt = Date.now()
+          const student: Student = { id: studentId, name, socket, joinedAt }
+          room.students.set(studentId, student)
+          socketMeta.set(socket, { code, role: 'student', name, studentId })
+          send(socket, { type: 'joined', studentId })
+          if (room.teacher) {
+            send(room.teacher, { type: 'student_joined', studentId, name, joinedAt })
+          }
+          app.log.info(`Student ${name} (${studentId}) joined room ${code}`)
         }
 
       // ── transcript (teacher → students) ─────────────────────────────────
@@ -101,10 +123,11 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
             type: 'signal',
             signalType,
             studentId: meta.studentId,
+            name: meta.name,
             timestamp: Date.now(),
           })
         }
-        app.log.info(`Signal '${signalType}' from student in room ${meta.code}`)
+        app.log.info(`Signal '${signalType}' from ${meta.name} in room ${meta.code}`)
 
       // ── question (student → teacher) ──────────────────────────────────────
       } else if (msg.type === 'question') {
@@ -119,10 +142,11 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
             type: 'question',
             text,
             studentId: meta.studentId,
+            name: meta.name,
             timestamp: Date.now(),
           })
         }
-        app.log.info(`Question from student in room ${meta.code}: ${text.slice(0, 50)}`)
+        app.log.info(`Question from ${meta.name} in room ${meta.code}: ${text.slice(0, 50)}`)
       }
 
     } catch {
@@ -143,8 +167,11 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
       rooms.delete(meta.code)
       app.log.info(`Teacher left room ${meta.code}, room closed`)
     } else {
-      room.students.delete(socket)
-      app.log.info(`Student left room ${meta.code} (remaining: ${room.students.size})`)
+      if (meta.studentId) room.students.delete(meta.studentId)
+      if (room.teacher) {
+        send(room.teacher, { type: 'student_left', studentId: meta.studentId, name: meta.name })
+      }
+      app.log.info(`Student ${meta.name} left room ${meta.code} (remaining: ${room.students.size})`)
     }
   })
 })
