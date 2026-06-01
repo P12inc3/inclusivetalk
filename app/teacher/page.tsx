@@ -243,9 +243,10 @@ export default function TeacherPage() {
     } catch { /* clipboard unavailable */ }
   }, [code])
 
-  const clearSignals = useCallback(() => {
+  const clearSignals = () => {
+    setSignals([])
     setUnreadCount(0)
-  }, [])
+  }
 
   // ── Idle / Stopped ─────────────────────────────────────────────────────────
   if (state === 'idle' || state === 'stopped') {
