@@ -1,33 +1,115 @@
+import Image from 'next/image'
 import Link from 'next/link'
+import ThemeToggle from './components/ThemeToggle'
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4 bg-white dark:bg-gray-950">
-      <div className="w-full max-w-md text-center space-y-10">
-        <div className="space-y-4">
-          <h1 className="text-6xl font-bold text-gray-900 dark:text-white tracking-tight">
-            InclusiveTalk
-          </h1>
-          <p className="text-lg text-gray-500 dark:text-gray-400 leading-relaxed max-w-sm mx-auto">
-            Живые субтитры для лекций. Помощь глухим студентам в учебном классе.
-          </p>
+    <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+      {/* Header */}
+      <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-2">
+          <Image src="/logorb.png" alt="InclusiveTalk" width={40} height={40} className="rounded-lg" />
+          <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
         </div>
+        <ThemeToggle />
+      </header>
 
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link
-            href="/teacher"
-            className="flex-1 sm:flex-none px-8 py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-lg font-medium rounded-2xl transition-colors text-center"
+      <main className="flex-1">
+        {/* Hero */}
+        <section className="flex flex-col items-center text-center px-6 py-16 md:py-24">
+          <div className="max-w-2xl mx-auto space-y-8">
+            <Image
+              src="/logorb.png"
+              alt="InclusiveTalk"
+              width={200}
+              height={200}
+              className="mx-auto rounded-3xl shadow-lg"
+              priority
+            />
+
+            <div className="space-y-4">
+              <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white tracking-tight">
+                InclusiveTalk
+              </h1>
+              
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link
+                href="/teacher"
+                className="px-8 py-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-lg font-semibold rounded-2xl transition-colors text-center"
+              >
+                Я преподаватель
+              </Link>
+              <Link
+                href="/student"
+                className="px-8 py-4 border-2 border-gray-300 dark:border-gray-600 hover:border-blue-500 dark:hover:border-blue-500 text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 text-lg font-semibold rounded-2xl transition-colors text-center"
+              >
+                Я студент
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* How it works */}
+        <section className="px-6 py-16 bg-gray-50 dark:bg-gray-900">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-12">
+              Как это работает
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">🎤</div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                  1. Преподаватель начинает урок
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Открывает страницу преподавателя, выбирает язык, нажимает «Начать урок»
+                  и говорит как обычно.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">🔢</div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                  2. Делится кодом урока
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Система генерирует 6-значный код. Преподаватель сообщает его студентам
+                  устно или на доске.
+                </p>
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">📱</div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
+                  3. Студенты читают субтитры
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Студенты вводят код на своих телефонах и видят что говорит преподаватель
+                  в реальном времени.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-100 dark:border-gray-800 px-6 py-6">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400 dark:text-gray-500">
+          <span>© 2026 InclusiveTalk. Создано преподавателем для студентов.</span>
+          <a
+            href="https://github.com/P12inc3/inclusivetalk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
           >
-            Я преподаватель
-          </Link>
-          <Link
-            href="/student"
-            className="flex-1 sm:flex-none px-8 py-4 bg-gray-900 hover:bg-gray-800 dark:bg-gray-100 dark:hover:bg-gray-200 dark:text-gray-900 text-white text-lg font-medium rounded-2xl transition-colors text-center"
-          >
-            Я студент
-          </Link>
+            GitHub
+          </a>
         </div>
-      </div>
-    </main>
+      </footer>
+    </div>
   )
 }

@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { FeedbackItem, SignalType, StudentInfo } from '../types'
+import ThemeToggle from '../components/ThemeToggle'
 
 type LessonState = 'idle' | 'connecting' | 'active' | 'stopped' | 'error'
 type Language = 'ru-RU' | 'kk-KZ' | 'en-US'
@@ -325,11 +327,16 @@ export default function TeacherPage() {
   // ── Idle / Stopped ─────────────────────────────────────────────────────────
   if (state === 'idle' || state === 'stopped') {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 bg-white dark:bg-gray-950">
-        <div className="text-center space-y-6">
-          <Link href="/" className="text-blue-600 hover:underline text-sm">
-            ← На главную
+      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
           </Link>
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 flex items-center justify-center px-4">
+        <div className="text-center space-y-6">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Преподаватель</h1>
           <div className="space-y-2">
             <p className="text-sm text-gray-500 dark:text-gray-400">Язык урока</p>
@@ -356,30 +363,35 @@ export default function TeacherPage() {
             Начать урок
           </button>
         </div>
-      </main>
+        </main>
+      </div>
     )
   }
 
   // ── Error ──────────────────────────────────────────────────────────────────
   if (state === 'error') {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 bg-white dark:bg-gray-950">
-        <div className="text-center space-y-4 max-w-sm">
-          <p className="text-xl font-semibold text-red-600">Ошибка</p>
-          <p className="text-gray-500 dark:text-gray-400">{errorMsg}</p>
-          <button
-            onClick={retry}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
-          >
-            Попробовать снова
-          </button>
-          <div>
-            <Link href="/" className="text-blue-600 hover:underline text-sm">
-              ← На главную
-            </Link>
+      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center space-y-4 max-w-sm">
+            <p className="text-xl font-semibold text-red-600">Ошибка</p>
+            <p className="text-gray-500 dark:text-gray-400">{errorMsg}</p>
+            <button
+              onClick={retry}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
+            >
+              Попробовать снова
+            </button>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     )
   }
 
@@ -388,10 +400,16 @@ export default function TeacherPage() {
     return (
       <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
-          <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          <button onClick={stopLesson} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors">
-            Завершить урок
-          </button>
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={32} height={32} className="rounded-md" />
+            <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button onClick={stopLesson} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors">
+              Завершить урок
+            </button>
+          </div>
         </div>
         <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl p-6 mb-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -492,13 +510,19 @@ export default function TeacherPage() {
       {/* Main content */}
       <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
-          <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          <button
-            onClick={stopLesson}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Завершить урок
-          </button>
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={32} height={32} className="rounded-md" />
+            <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              onClick={stopLesson}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Завершить урок
+            </button>
+          </div>
         </div>
 
         <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl p-6 mb-6 space-y-4">

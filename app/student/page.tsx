@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import type { SignalType } from '../types'
+import ThemeToggle from '../components/ThemeToggle'
 
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
 
@@ -239,12 +241,17 @@ export default function StudentPage() {
   if (state === 'idle') {
     const canConnect = nameInput.trim().length > 0 && codeInput.length === 6
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 bg-white dark:bg-gray-950">
+      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-sm space-y-6">
           <div className="text-center">
-            <Link href="/" className="text-blue-600 hover:underline text-sm block mb-3">
-              ← На главную
-            </Link>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Студент</h1>
           </div>
 
@@ -310,37 +317,56 @@ export default function StudentPage() {
             </button>
           </div>
         </div>
-      </main>
+        </main>
+      </div>
     )
   }
 
   // ── Connecting ─────────────────────────────────────────────────────────────
   if (state === 'connecting') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-950">
-        <div className="text-center space-y-3">
-          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-gray-500 dark:text-gray-400">Подключение...</p>
-        </div>
-      </main>
+      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 flex items-center justify-center bg-white dark:bg-gray-950">
+          <div className="text-center space-y-3">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-gray-500 dark:text-gray-400">Подключение...</p>
+          </div>
+        </main>
+      </div>
     )
   }
 
   // ── Error ──────────────────────────────────────────────────────────────────
   if (state === 'error') {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4 bg-white dark:bg-gray-950">
-        <div className="text-center space-y-4 max-w-sm">
-          <p className="text-xl font-semibold text-red-600">Ошибка</p>
-          <p className="text-gray-500 dark:text-gray-400">{errorMsg}</p>
-          <button
-            onClick={retry}
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
-          >
-            Попробовать снова
-          </button>
-        </div>
-      </main>
+      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+          <Link href="/" className="flex items-center gap-2">
+            <Image src="/logorb.png" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
+          </Link>
+          <ThemeToggle />
+        </header>
+        <main className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center space-y-4 max-w-sm">
+            <p className="text-xl font-semibold text-red-600">Ошибка</p>
+            <p className="text-gray-500 dark:text-gray-400">{errorMsg}</p>
+            <button
+              onClick={retry}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
+            >
+              Попробовать снова
+            </button>
+          </div>
+        </main>
+      </div>
     )
   }
 
@@ -348,26 +374,29 @@ export default function StudentPage() {
   const bottomPadding = (questionOpen || aiPanelOpen) ? 280 : 130
 
   return (
-    <main className="min-h-screen flex flex-col bg-gray-950">
-      <header className="sticky top-0 flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 z-10">
+    <main className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
+      <header className="sticky top-0 flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10">
         <div className="flex items-center gap-2 min-w-0">
           {lessonEnded ? (
-            <span className="text-sm text-gray-400 font-medium">Урок завершён</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">Урок завершён</span>
           ) : (
             <>
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
-              <span className="text-sm text-gray-300 font-medium truncate">
+              <span className="text-sm text-gray-700 dark:text-gray-300 font-medium truncate">
                 {connectedName} · #{connectedCode}
               </span>
             </>
           )}
         </div>
-        <button
-          onClick={disconnect}
-          className="text-sm text-gray-400 hover:text-white transition-colors px-3 py-1 rounded-lg hover:bg-gray-800 shrink-0 ml-2"
-        >
-          Отключиться
-        </button>
+        <div className="flex items-center gap-1 shrink-0 ml-2">
+          <ThemeToggle />
+          <button
+            onClick={disconnect}
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            Отключиться
+          </button>
+        </div>
       </header>
 
       <div
@@ -380,12 +409,12 @@ export default function StudentPage() {
           </p>
         )}
         {subtitles.map((line, i) => (
-          <p key={i} className="text-3xl md:text-4xl font-medium leading-relaxed text-white">
+          <p key={i} className="text-3xl md:text-4xl font-medium leading-relaxed text-gray-900 dark:text-white">
             {line}
           </p>
         ))}
         {lessonEnded && (
-          <p className="text-center text-gray-500 text-xl pt-6 border-t border-gray-800">
+          <p className="text-center text-gray-500 text-xl pt-6 border-t border-gray-200 dark:border-gray-800">
             — Урок завершён —
           </p>
         )}
@@ -393,15 +422,15 @@ export default function StudentPage() {
       </div>
 
       {/* Fixed bottom panel */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900/95 backdrop-blur-sm border-t border-gray-800">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800">
 
         {aiPanelOpen && (
-          <div className="px-3 pt-3 pb-2 border-b border-gray-800">
+          <div className="px-3 pt-3 pb-2 border-b border-gray-200 dark:border-gray-800">
             <div className="max-w-2xl mx-auto">
               {aiLoading ? (
                 <div className="flex items-center justify-center py-4 gap-2">
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm text-gray-400">Генерирую вопросы...</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">Генерирую вопросы...</span>
                 </div>
               ) : aiQuestions.length === 0 ? (
                 <p className="text-center text-sm text-gray-500 py-3">
@@ -418,7 +447,7 @@ export default function StudentPage() {
                         setQuestionOpen(true)
                         setAiPanelOpen(false)
                       }}
-                      className="w-full text-left text-sm text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg transition-colors"
+                      className="w-full text-left text-sm text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 px-3 py-2 rounded-lg transition-colors"
                     >
                       {q}
                     </button>
@@ -430,7 +459,7 @@ export default function StudentPage() {
         )}
 
         {questionOpen && (
-          <div className="px-3 pt-3 pb-2 border-b border-gray-800">
+          <div className="px-3 pt-3 pb-2 border-b border-gray-200 dark:border-gray-800">
             <div className="max-w-2xl mx-auto">
               <textarea
                 ref={textareaRef}
@@ -450,7 +479,7 @@ export default function StudentPage() {
                 placeholder="Напишите ваш вопрос преподавателю..."
                 maxLength={MAX_QUESTION_LEN}
                 rows={3}
-                className="w-full bg-gray-800 text-white text-base rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
+                className="w-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-base rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 dark:placeholder-gray-500"
                 style={{ minHeight: '80px', maxHeight: '160px' }}
               />
               <div className="flex items-center justify-between mt-2">
@@ -460,14 +489,14 @@ export default function StudentPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => { setQuestionOpen(false); setQuestionText('') }}
-                    className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800"
+                    className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
                     Отмена
                   </button>
                   <button
                     onClick={sendQuestion}
                     disabled={!questionText.trim() || questionCooldown || lessonEnded}
-                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
+                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
                   >
                     Отправить
                   </button>
@@ -477,9 +506,9 @@ export default function StudentPage() {
           </div>
         )}
 
-        <div className="max-w-2xl mx-auto px-3 py-2 border-b border-gray-800">
+        <div className="max-w-2xl mx-auto px-3 py-2 border-b border-gray-200 dark:border-gray-800">
           {questionSent ? (
-            <p className="text-center text-sm text-green-400 font-medium py-0.5">
+            <p className="text-center text-sm text-green-600 dark:text-green-400 font-medium py-0.5">
               ✅ Отправлено!
             </p>
           ) : (
@@ -487,16 +516,16 @@ export default function StudentPage() {
               <button
                 onClick={fetchAIQuestions}
                 disabled={lessonEnded || aiCooldown || aiLoading}
-                className="flex-1 text-sm text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
+                className="flex-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
               >
                 <span>💡</span>
                 <span>{aiLoading ? 'Загрузка...' : aiCooldown ? 'Подождите...' : 'Подсказать вопрос'}</span>
               </button>
-              <div className="w-px h-4 bg-gray-700 shrink-0" />
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 shrink-0" />
               <button
                 onClick={() => { if (!lessonEnded) { setQuestionOpen(v => !v); setAiPanelOpen(false) } }}
                 disabled={lessonEnded}
-                className="flex-1 text-sm text-gray-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
+                className="flex-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
               >
                 <span>✍</span>
                 <span>{questionOpen ? 'Свернуть' : 'Написать вопрос'}</span>
