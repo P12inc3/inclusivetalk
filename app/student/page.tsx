@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { SignalType } from '../types'
 import ThemeToggle from '../components/ThemeToggle'
+import { SIGNAL_LABELS, UI_LABELS, type Lang } from '../i18n'
 
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
 
@@ -14,19 +15,27 @@ const API_URL = WS_URL
   .replace(/^ws:\/\//, 'http://')
   .replace(/\/ws$/, '')
 const LS_NAME_KEY = 'inclusivetalk_student_name'
+const LS_LANG_KEY = 'inclusivetalk_student_lang'
 
-const SIGNALS: Array<{ type: SignalType; icon: string; label: string; color: string }> = [
-  { type: 'confused',    icon: '🤔', label: 'Не понял',  color: 'bg-amber-500  active:bg-amber-600'   },
-  { type: 'repeat',     icon: '🔁', label: 'Повторите', color: 'bg-blue-500   active:bg-blue-600'    },
-  { type: 'slow',       icon: '⏸', label: 'Медленнее', color: 'bg-violet-500 active:bg-violet-600'  },
-  { type: 'question',   icon: '❓', label: 'Вопрос',    color: 'bg-red-500    active:bg-red-600'     },
-  { type: 'understood', icon: '✓',  label: 'Понятно',   color: 'bg-emerald-500 active:bg-emerald-600'},
+const SIGNALS: Array<{ type: SignalType; icon: string; color: string }> = [
+  { type: 'confused',    icon: '🤔', color: 'bg-amber-500  active:bg-amber-600'   },
+  { type: 'repeat',     icon: '🔁', color: 'bg-blue-500   active:bg-blue-600'    },
+  { type: 'slow',       icon: '⏸', color: 'bg-violet-500 active:bg-violet-600'  },
+  { type: 'question',   icon: '❓', color: 'bg-red-500    active:bg-red-600'     },
+  { type: 'understood', icon: '✓',  color: 'bg-emerald-500 active:bg-emerald-600'},
 ]
 
 const MAX_QUESTION_LEN = 500
 
+const LANG_NAMES: Record<Lang, string> = {
+  ru: 'Русский',
+  kk: 'Қазақша',
+  en: 'English',
+}
+
 export default function StudentPage() {
   const [state, setState] = useState<StudentState>('idle')
+  const [studentLang, setStudentLang] = useState<Lang>('ru')
   const [nameInput, setNameInput] = useState('')
   const [codeInput, setCodeInput] = useState('')
   const [connectedCode, setConnectedCode] = useState('')
@@ -43,7 +52,6 @@ export default function StudentPage() {
   const [questionSent, setQuestionSent] = useState(false)
   const [questionCooldown, setQuestionCooldown] = useState(false)
 
-  const [lessonLanguage, setLessonLanguage] = useState<'ru' | 'kk' | 'en'>('ru')
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [aiQuestions, setAiQuestions] = useState<string[]>([])
   const [aiLoading, setAiLoading] = useState(false)
@@ -56,11 +64,14 @@ export default function StudentPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recentTranscriptRef = useRef<string[]>([])
 
-  // Load saved name from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(LS_NAME_KEY)
-      if (saved) setNameInput(saved)
+      const savedName = localStorage.getItem(LS_NAME_KEY)
+      if (savedName) setNameInput(savedName)
+      const savedLang = localStorage.getItem(LS_LANG_KEY)
+      if (savedLang && (savedLang === 'ru' || savedLang === 'kk' || savedLang === 'en')) {
+        setStudentLang(savedLang)
+      }
     } catch { /* localStorage unavailable */ }
   }, [])
 
@@ -86,6 +97,11 @@ export default function StudentPage() {
     setAiCooldown(false)
     recentTranscriptRef.current = []
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
+  }, [])
+
+  const changeLang = useCallback((lang: Lang) => {
+    setStudentLang(lang)
+    try { localStorage.setItem(LS_LANG_KEY, lang) } catch { /* */ }
   }, [])
 
   const connect = useCallback(() => {
@@ -119,8 +135,6 @@ export default function StudentPage() {
         const msg = JSON.parse(event.data) as Record<string, unknown>
         if (msg.type === 'joined') {
           try { localStorage.setItem(LS_NAME_KEY, name) } catch { /* */ }
-          const rawLang = String(msg.language ?? 'ru')
-          setLessonLanguage((['ru', 'kk', 'en'].includes(rawLang) ? rawLang : 'ru') as 'ru' | 'kk' | 'en')
           setConnectedCode(codeInput)
           setConnectedName(name)
           setStateSynced('active')
@@ -223,7 +237,7 @@ export default function StudentPage() {
       const res = await fetch(`${API_URL}/api/generate-questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, language: lessonLanguage }),
+        body: JSON.stringify({ transcript, language: studentLang }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { questions?: string[] }
@@ -235,7 +249,9 @@ export default function StudentPage() {
       setAiCooldown(true)
       setTimeout(() => setAiCooldown(false), 10_000)
     }
-  }, [aiCooldown, aiLoading, lessonEnded, lessonLanguage])
+  }, [aiCooldown, aiLoading, lessonEnded, studentLang])
+
+  const t = UI_LABELS[studentLang]
 
   // ── Idle ───────────────────────────────────────────────────────────────────
   if (state === 'idle') {
@@ -250,73 +266,96 @@ export default function StudentPage() {
           <ThemeToggle />
         </header>
         <main className="flex-1 flex items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-6">
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Студент</h1>
-          </div>
-
-          <div className="space-y-4">
-            {/* Name input */}
-            <div className="space-y-2">
-              <label
-                htmlFor="name-input"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Ваше имя
-              </label>
-              <input
-                id="name-input"
-                type="text"
-                maxLength={50}
-                value={nameInput}
-                onChange={e => {
-                  setNameInput(e.target.value)
-                  setErrorMsg('')
-                }}
-                onKeyDown={e => e.key === 'Enter' && connect()}
-                placeholder="Например, Айгерим"
-                className="w-full text-xl py-3 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
-                autoComplete="name"
-              />
+          <div className="w-full max-w-sm space-y-6">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.student}</h1>
             </div>
 
-            {/* Code input */}
-            <div className="space-y-2">
-              <label
-                htmlFor="code-input"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+            <div className="space-y-4">
+              {/* Name input */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="name-input"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {t.yourName}
+                </label>
+                <input
+                  id="name-input"
+                  type="text"
+                  maxLength={50}
+                  value={nameInput}
+                  onChange={e => {
+                    setNameInput(e.target.value)
+                    setErrorMsg('')
+                  }}
+                  onKeyDown={e => e.key === 'Enter' && connect()}
+                  placeholder={t.nameExample}
+                  className="w-full text-xl py-3 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
+                  autoComplete="name"
+                />
+              </div>
+
+              {/* Language picker */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Язык интерфейса
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['ru', 'kk', 'en'] as const).map(lang => (
+                    <button
+                      key={lang}
+                      onClick={() => changeLang(lang)}
+                      className={[
+                        'py-2.5 rounded-xl text-sm font-medium transition-colors border-2',
+                        studentLang === lang
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-400 dark:hover:border-blue-500',
+                      ].join(' ')}
+                    >
+                      {LANG_NAMES[lang]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Code input */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="code-input"
+                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {t.lessonCode}
+                </label>
+                <input
+                  id="code-input"
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={codeInput}
+                  onChange={e => {
+                    setCodeInput(e.target.value.replace(/\D/g, ''))
+                    setErrorMsg('')
+                  }}
+                  onKeyDown={e => e.key === 'Enter' && connect()}
+                  placeholder="123456"
+                  className="w-full text-4xl font-mono text-center py-4 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              {errorMsg && (
+                <p className="text-sm text-red-600 text-center">{errorMsg}</p>
+              )}
+
+              <button
+                onClick={connect}
+                disabled={!canConnect}
+                className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-400 text-white text-lg font-medium rounded-xl transition-colors"
               >
-                Код урока
-              </label>
-              <input
-                id="code-input"
-                type="tel"
-                inputMode="numeric"
-                maxLength={6}
-                value={codeInput}
-                onChange={e => {
-                  setCodeInput(e.target.value.replace(/\D/g, ''))
-                  setErrorMsg('')
-                }}
-                onKeyDown={e => e.key === 'Enter' && connect()}
-                placeholder="123456"
-                className="w-full text-4xl font-mono text-center py-4 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
-              />
+                {t.connect}
+              </button>
             </div>
-
-            {errorMsg && (
-              <p className="text-sm text-red-600 text-center">{errorMsg}</p>
-            )}
-
-            <button
-              onClick={connect}
-              disabled={!canConnect}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:cursor-not-allowed disabled:text-gray-400 text-white text-lg font-medium rounded-xl transition-colors"
-            >
-              Подключиться
-            </button>
           </div>
-        </div>
         </main>
       </div>
     )
@@ -336,7 +375,7 @@ export default function StudentPage() {
         <main className="flex-1 flex items-center justify-center bg-white dark:bg-gray-950">
           <div className="text-center space-y-3">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-gray-500 dark:text-gray-400">Подключение...</p>
+            <p className="text-gray-500 dark:text-gray-400">{t.connecting}</p>
           </div>
         </main>
       </div>
@@ -356,13 +395,13 @@ export default function StudentPage() {
         </header>
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="text-center space-y-4 max-w-sm">
-            <p className="text-xl font-semibold text-red-600">Ошибка</p>
+            <p className="text-xl font-semibold text-red-600">{t.error}</p>
             <p className="text-gray-500 dark:text-gray-400">{errorMsg}</p>
             <button
               onClick={retry}
               className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors"
             >
-              Попробовать снова
+              {t.retry}
             </button>
           </div>
         </main>
@@ -378,7 +417,7 @@ export default function StudentPage() {
       <header className="sticky top-0 flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 z-10">
         <div className="flex items-center gap-2 min-w-0">
           {lessonEnded ? (
-            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">Урок завершён</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">{t.lessonEnded}</span>
           ) : (
             <>
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
@@ -394,7 +433,7 @@ export default function StudentPage() {
             onClick={disconnect}
             className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors px-3 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
           >
-            Отключиться
+            {t.disconnect}
           </button>
         </div>
       </header>
@@ -405,7 +444,7 @@ export default function StudentPage() {
       >
         {subtitles.length === 0 && !lessonEnded && (
           <p className="text-center text-gray-500 text-2xl mt-16">
-            Ожидание преподавателя...
+            {t.waitingTeacher}
           </p>
         )}
         {subtitles.map((line, i) => (
@@ -415,7 +454,7 @@ export default function StudentPage() {
         ))}
         {lessonEnded && (
           <p className="text-center text-gray-500 text-xl pt-6 border-t border-gray-200 dark:border-gray-800">
-            — Урок завершён —
+            — {t.lessonEnded} —
           </p>
         )}
         <div ref={subtitlesEndRef} />
@@ -430,15 +469,15 @@ export default function StudentPage() {
               {aiLoading ? (
                 <div className="flex items-center justify-center py-4 gap-2">
                   <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                  <span className="text-sm text-gray-500 dark:text-gray-400">Генерирую вопросы...</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">{t.aiThinking}</span>
                 </div>
               ) : aiQuestions.length === 0 ? (
                 <p className="text-center text-sm text-gray-500 py-3">
-                  Не удалось сгенерировать вопросы
+                  {t.aiNoQuestions}
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  <p className="text-xs text-gray-500 mb-2">Выберите вопрос или напишите свой:</p>
+                  <p className="text-xs text-gray-500 mb-2">{t.aiSelectOrWrite}</p>
                   {aiQuestions.map((q, i) => (
                     <button
                       key={i}
@@ -476,7 +515,7 @@ export default function StudentPage() {
                     sendQuestion()
                   }
                 }}
-                placeholder="Напишите ваш вопрос преподавателю..."
+                placeholder={t.questionPlaceholder}
                 maxLength={MAX_QUESTION_LEN}
                 rows={3}
                 className="w-full bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white text-base rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 dark:placeholder-gray-500"
@@ -491,14 +530,14 @@ export default function StudentPage() {
                     onClick={() => { setQuestionOpen(false); setQuestionText('') }}
                     className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
                   >
-                    Отмена
+                    {t.cancel}
                   </button>
                   <button
                     onClick={sendQuestion}
                     disabled={!questionText.trim() || questionCooldown || lessonEnded}
                     className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
                   >
-                    Отправить
+                    {t.send}
                   </button>
                 </div>
               </div>
@@ -509,7 +548,7 @@ export default function StudentPage() {
         <div className="max-w-2xl mx-auto px-3 py-2 border-b border-gray-200 dark:border-gray-800">
           {questionSent ? (
             <p className="text-center text-sm text-green-600 dark:text-green-400 font-medium py-0.5">
-              ✅ Отправлено!
+              ✅ {t.sent}
             </p>
           ) : (
             <div className="flex items-center gap-1">
@@ -518,8 +557,7 @@ export default function StudentPage() {
                 disabled={lessonEnded || aiCooldown || aiLoading}
                 className="flex-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
               >
-                <span>💡</span>
-                <span>{aiLoading ? 'Загрузка...' : aiCooldown ? 'Подождите...' : 'Подсказать вопрос'}</span>
+                {aiLoading ? t.aiThinking : t.suggestQuestion}
               </button>
               <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 shrink-0" />
               <button
@@ -527,8 +565,7 @@ export default function StudentPage() {
                 disabled={lessonEnded}
                 className="flex-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1.5"
               >
-                <span>✍</span>
-                <span>{questionOpen ? 'Свернуть' : 'Написать вопрос'}</span>
+                {questionOpen ? t.collapse : t.writeQuestion}
               </button>
             </div>
           )}
@@ -536,7 +573,7 @@ export default function StudentPage() {
 
         <div className="px-2 py-2">
           <div className="grid grid-cols-5 gap-1 max-w-2xl mx-auto">
-            {SIGNALS.map(({ type, icon, label, color }) => {
+            {SIGNALS.map(({ type, icon, color }) => {
               const sent = lastSignal === type
               return (
                 <button
@@ -553,7 +590,7 @@ export default function StudentPage() {
                 >
                   <span className="text-2xl leading-none">{icon}</span>
                   <span className="text-[10px] leading-tight text-center px-0.5">
-                    {sent ? 'Отправлено' : label}
+                    {sent ? t.signalSent : SIGNAL_LABELS[studentLang][type]}
                   </span>
                 </button>
               )
