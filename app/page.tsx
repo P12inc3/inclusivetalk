@@ -8,7 +8,7 @@ export default function Home() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center gap-2">
-          <Image src="/logorb.png" alt="InclusiveTalk" width={40} height={40} className="rounded-lg" />
+          <Image src="/logorb.png" alt="InclusiveTalk" width={40} height={40} className="rounded-lg dark:brightness-0 dark:invert" />
           <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
         </div>
         <ThemeToggle />
@@ -23,7 +23,7 @@ export default function Home() {
               alt="InclusiveTalk"
               width={200}
               height={200}
-              className="mx-auto rounded-3xl shadow-lg"
+              className="mx-auto rounded-3xl shadow-lg dark:brightness-0 dark:invert"
               priority
             />
 

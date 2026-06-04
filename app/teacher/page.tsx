@@ -330,7 +330,7 @@ export default function TeacherPage() {
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
             <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
           </Link>
           <ThemeToggle />
@@ -374,7 +374,7 @@ export default function TeacherPage() {
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg" />
+            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
             <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
           </Link>
           <ThemeToggle />
@@ -401,7 +401,7 @@ export default function TeacherPage() {
       <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md" />
+            <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md dark:brightness-0 dark:invert" />
             <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
           </Link>
           <div className="flex items-center gap-2">
@@ -511,7 +511,7 @@ export default function TeacherPage() {
       <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md" />
+            <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md dark:brightness-0 dark:invert" />
             <span className="text-xl font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
           </Link>
           <div className="flex items-center gap-2">
