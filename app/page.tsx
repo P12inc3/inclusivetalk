@@ -31,7 +31,14 @@ export default function Home() {
               <h1 className="text-4xl md:text-5xl font-bold text-gray-900 dark:text-white tracking-tight">
                 InclusiveTalk
               </h1>
-              
+              <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-300 font-medium">
+                Живые субтитры для глухих и слабослышащих студентов
+              </p>
+              <p className="text-base text-gray-500 dark:text-gray-400 leading-relaxed max-w-lg mx-auto">
+                Веб-приложение для классов где учатся слышащие и неслышащие студенты.
+                Преподаватель ведёт урок голосом — студенты получают субтитры на своих
+                устройствах в реальном времени. Работает на русском, казахском и английском.
+              </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -60,7 +67,7 @@ export default function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">🎤</div>
+                <div className="text-5xl mb-4">🎤</div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
                   1. Преподаватель начинает урок
                 </h3>
@@ -71,7 +78,7 @@ export default function Home() {
               </div>
 
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">🔢</div>
+                <div className="text-5xl mb-4">🔢</div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
                   2. Делится кодом урока
                 </h3>
@@ -82,7 +89,7 @@ export default function Home() {
               </div>
 
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-8 shadow-sm">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-950 text-3xl mb-4">📱</div>
+                <div className="text-5xl mb-4">📱</div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
                   3. Студенты читают субтитры
                 </h3>
