@@ -8,20 +8,20 @@ export default function Icon() {
     (
       <div
         style={{
-          background: '#0d9488',
+          background: 'rgb(12, 169, 158)',
           color: 'white',
           width: '100%',
           height: '100%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 24,
+          fontSize: 18,
           fontWeight: 700,
           borderRadius: 8,
           fontFamily: 'sans-serif',
         }}
       >
-        i
+        iT
       </div>
     ),
     { ...size }
