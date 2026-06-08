@@ -154,6 +154,25 @@ app.get('/ws', { websocket: true }, (socket: WebSocket) => {
           })
         }
         app.log.info(`Question from ${meta.name} in room ${meta.code}: ${text.slice(0, 50)}`)
+
+      // ── gesture (student → teacher) ───────────────────────────────────────
+      } else if (msg.type === 'gesture') {
+        const meta = socketMeta.get(socket)
+        if (!meta || meta.role !== 'student') return
+        const room = rooms.get(meta.code)
+        if (!room) return
+        const letter = String(msg.letter ?? '').trim()
+        if (!letter) return
+        if (room.teacher) {
+          send(room.teacher, {
+            type: 'gesture',
+            letter,
+            studentId: meta.studentId,
+            name: meta.name,
+            timestamp: Date.now(),
+          })
+        }
+        app.log.info(`Gesture '${letter}' from ${meta.name} in room ${meta.code}`)
       }
 
     } catch {

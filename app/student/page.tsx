@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { SignalType } from '../types'
 import ThemeToggle from '../components/ThemeToggle'
+import GestureMockModal from '../components/GestureMockModal'
 import { SIGNAL_LABELS, UI_LABELS, type Lang } from '../i18n'
 
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
@@ -57,6 +58,9 @@ export default function StudentPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiCooldown, setAiCooldown] = useState(false)
 
+  const [gestureOpen, setGestureOpen] = useState(false)
+  const [gestureToast, setGestureToast] = useState(false)
+
   const wsRef = useRef<WebSocket | null>(null)
   const stateRef = useRef<StudentState>('idle')
   const lessonEndedRef = useRef(false)
@@ -95,6 +99,8 @@ export default function StudentPage() {
     setAiQuestions([])
     setAiLoading(false)
     setAiCooldown(false)
+    setGestureOpen(false)
+    setGestureToast(false)
     recentTranscriptRef.current = []
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }, [])
@@ -250,6 +256,13 @@ export default function StudentPage() {
       setTimeout(() => setAiCooldown(false), 10_000)
     }
   }, [aiCooldown, aiLoading, lessonEnded, studentLang])
+
+  const sendGesture = useCallback((letter: string) => {
+    if (!wsRef.current || lessonEnded) return
+    wsRef.current.send(JSON.stringify({ type: 'gesture', code: connectedCode, letter }))
+    setGestureToast(true)
+    setTimeout(() => setGestureToast(false), 3000)
+  }, [connectedCode, lessonEnded])
 
   const t = UI_LABELS[studentLang]
 
@@ -567,6 +580,15 @@ export default function StudentPage() {
               >
                 {questionOpen ? t.collapse : t.writeQuestion}
               </button>
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-700 shrink-0" />
+              <button
+                onClick={() => { if (!lessonEnded) setGestureOpen(true) }}
+                disabled={lessonEnded}
+                title="Прототип интерфейса жестового перевода"
+                className="flex-1 text-sm text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors py-0.5 flex items-center justify-center gap-1"
+              >
+                🤚 Жесты (демо)
+              </button>
             </div>
           )}
         </div>
@@ -599,6 +621,21 @@ export default function StudentPage() {
         </div>
 
       </div>
+
+      {gestureToast && (
+        <div
+          role="status"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-violet-600 text-white px-4 py-3 rounded-xl shadow-xl text-sm font-medium pointer-events-none"
+        >
+          🤚 Жест отправлен преподавателю
+        </div>
+      )}
+
+      <GestureMockModal
+        isOpen={gestureOpen}
+        onClose={() => setGestureOpen(false)}
+        onSendGesture={sendGesture}
+      />
     </main>
   )
 }

@@ -269,6 +269,26 @@ export default function TeacherPage() {
           setToast(item)
           toastTimerRef.current = setTimeout(() => setToast(null), 3000)
           playBeep()
+
+        } else if (msg.type === 'gesture') {
+          const letter = String(msg.letter ?? '').trim()
+          if (!letter) return
+
+          const item: FeedbackItem = {
+            id: crypto.randomUUID(),
+            kind: 'gesture',
+            gestureLetter: letter,
+            timestamp: typeof msg.timestamp === 'number' ? msg.timestamp : Date.now(),
+            studentId: String(msg.studentId ?? ''),
+            studentName: String(msg.name ?? 'Студент'),
+          }
+
+          setSignals(prev => [item, ...prev].slice(0, 10))
+          setUnreadCount(prev => prev + 1)
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+          setToast(item)
+          toastTimerRef.current = setTimeout(() => setToast(null), 3000)
+          playBeep()
         }
       } catch { /* ignore malformed */ }
     }
@@ -485,6 +505,21 @@ export default function TeacherPage() {
               </div>
             )
           }
+          if (item.kind === 'gesture') {
+            return (
+              <div key={item.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
+                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-violet-600 text-white text-sm shrink-0">
+                  🤚
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                    {item.studentName}: показал жест «{item.gestureLetter}»
+                  </p>
+                  <p className="text-xs text-gray-400">{formatTime(item.timestamp)}</p>
+                </div>
+              </div>
+            )
+          }
           const cfg = SIGNAL_CONFIG[item.signalType!]
           return (
             <div key={item.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
@@ -696,16 +731,26 @@ export default function TeacherPage() {
           onClick={() => setToast(null)}
           className={[
             'fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl cursor-pointer max-w-xs text-white',
-            toast.kind === 'question' ? 'bg-blue-600' : SIGNAL_CONFIG[toast.signalType!].bg,
+            toast.kind === 'question'
+              ? 'bg-blue-600'
+              : toast.kind === 'gesture'
+              ? 'bg-violet-600'
+              : SIGNAL_CONFIG[toast.signalType!].bg,
           ].join(' ')}
         >
           <span className="text-xl shrink-0">
-            {toast.kind === 'question' ? '✍' : SIGNAL_CONFIG[toast.signalType!].icon}
+            {toast.kind === 'question'
+              ? '✍'
+              : toast.kind === 'gesture'
+              ? '🤚'
+              : SIGNAL_CONFIG[toast.signalType!].icon}
           </span>
           <div className="min-w-0">
             <p className="font-medium text-sm leading-snug break-words">
               {toast.kind === 'question'
                 ? `${toast.studentName}: ${toast.questionText!.length > 45 ? toast.questionText!.slice(0, 45) + '…' : toast.questionText}`
+                : toast.kind === 'gesture'
+                ? `${toast.studentName}: жест «${toast.gestureLetter}»`
                 : `${toast.studentName}: ${SIGNAL_CONFIG[toast.signalType!].label}`}
             </p>
           </div>

@@ -2,9 +2,10 @@ export type SignalType = 'confused' | 'repeat' | 'slow' | 'question' | 'understo
 
 export interface FeedbackItem {
   id: string
-  kind: 'signal' | 'question'
+  kind: 'signal' | 'question' | 'gesture'
   signalType?: SignalType
   questionText?: string
+  gestureLetter?: string
   timestamp: number
   studentId: string
   studentName: string
