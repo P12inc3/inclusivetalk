@@ -1,11 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
 import type { SignalType } from '../types'
 import ThemeToggle from '../components/ThemeToggle'
 import GestureMockModal from '../components/GestureMockModal'
+import SiteHeader from '../components/SiteHeader'
 import { SIGNAL_LABELS, UI_LABELS, type Lang } from '../i18n'
 
 type StudentState = 'idle' | 'connecting' | 'active' | 'error'
@@ -18,6 +17,11 @@ const API_URL = WS_URL
 const LS_NAME_KEY = 'inclusivetalk_student_name'
 const LS_LANG_KEY = 'inclusivetalk_student_lang'
 
+const MAX_SUBTITLES = 200
+const MAX_QUESTION_LEN = 500
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_BACKOFF_BASE_MS = 1_000
+
 const SIGNALS: Array<{ type: SignalType; icon: string; color: string }> = [
   { type: 'confused',    icon: '🤔', color: 'bg-amber-500  active:bg-amber-600'   },
   { type: 'repeat',     icon: '🔁', color: 'bg-blue-500   active:bg-blue-600'    },
@@ -25,8 +29,6 @@ const SIGNALS: Array<{ type: SignalType; icon: string; color: string }> = [
   { type: 'question',   icon: '❓', color: 'bg-red-500    active:bg-red-600'     },
   { type: 'understood', icon: '✓',  color: 'bg-emerald-500 active:bg-emerald-600'},
 ]
-
-const MAX_QUESTION_LEN = 500
 
 const LANG_NAMES: Record<Lang, string> = {
   ru: 'Русский',
@@ -36,14 +38,26 @@ const LANG_NAMES: Record<Lang, string> = {
 
 export default function StudentPage() {
   const [state, setState] = useState<StudentState>('idle')
-  const [studentLang, setStudentLang] = useState<Lang>('ru')
-  const [nameInput, setNameInput] = useState('')
+  const [studentLang, setStudentLang] = useState<Lang>(() => {
+    if (typeof window === 'undefined') return 'ru'
+    try {
+      const saved = localStorage.getItem(LS_LANG_KEY)
+      return (saved === 'ru' || saved === 'kk' || saved === 'en') ? saved : 'ru'
+    } catch { return 'ru' }
+  })
+  const [nameInput, setNameInput] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    try { return localStorage.getItem(LS_NAME_KEY) ?? '' } catch { return '' }
+  })
   const [codeInput, setCodeInput] = useState('')
   const [connectedCode, setConnectedCode] = useState('')
   const [connectedName, setConnectedName] = useState('')
   const [subtitles, setSubtitles] = useState<string[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [lessonEnded, setLessonEnded] = useState(false)
+
+  const [reconnecting, setReconnecting] = useState(false)
+  const [teacherReconnecting, setTeacherReconnecting] = useState(false)
 
   const [signalCooldown, setSignalCooldown] = useState(false)
   const [lastSignal, setLastSignal] = useState<SignalType | null>(null)
@@ -64,20 +78,15 @@ export default function StudentPage() {
   const wsRef = useRef<WebSocket | null>(null)
   const stateRef = useRef<StudentState>('idle')
   const lessonEndedRef = useRef(false)
+  const userDisconnectedRef = useRef(false)
   const subtitlesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const recentTranscriptRef = useRef<string[]>([])
-
-  useEffect(() => {
-    try {
-      const savedName = localStorage.getItem(LS_NAME_KEY)
-      if (savedName) setNameInput(savedName)
-      const savedLang = localStorage.getItem(LS_LANG_KEY)
-      if (savedLang && (savedLang === 'ru' || savedLang === 'kk' || savedLang === 'en')) {
-        setStudentLang(savedLang)
-      }
-    } catch { /* localStorage unavailable */ }
-  }, [])
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedCodeRef = useRef('')
+  const savedNameRef = useRef('')
+  const connectWsRef = useRef<((code: string, name: string, isReconnect: boolean) => void) | null>(null)
 
   const setStateSynced = useCallback((s: StudentState) => {
     stateRef.current = s
@@ -88,7 +97,10 @@ export default function StudentPage() {
     subtitlesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [subtitles])
 
-  useEffect(() => () => { wsRef.current?.close() }, [])
+  useEffect(() => () => {
+    wsRef.current?.close()
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+  }, [])
 
   const resetQuestionState = useCallback(() => {
     setQuestionOpen(false)
@@ -110,6 +122,101 @@ export default function StudentPage() {
     try { localStorage.setItem(LS_LANG_KEY, lang) } catch { /* */ }
   }, [])
 
+  const connectWs = useCallback((code: string, name: string, isReconnect: boolean) => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+
+    const ws = new WebSocket(WS_URL)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'register', role: 'student', code, name }))
+    }
+
+    ws.onmessage = (event: MessageEvent<string>) => {
+      try {
+        const msg = JSON.parse(event.data) as Record<string, unknown>
+
+        if (msg.type === 'joined') {
+          try { localStorage.setItem(LS_NAME_KEY, name) } catch { /* */ }
+          if (!isReconnect) {
+            // Fresh connect: set code/name and clear subtitles
+            setConnectedCode(code)
+            setConnectedName(name)
+            setSubtitles([])
+          }
+          reconnectAttemptsRef.current = 0
+          setReconnecting(false)
+          setStateSynced('active')
+
+        } else if (msg.type === 'error') {
+          setErrorMsg(String(msg.message ?? 'Ошибка подключения'))
+          setStateSynced('error')
+          ws.onclose = null
+          ws.close()
+          wsRef.current = null
+
+        } else if (msg.type === 'transcript') {
+          const text = String(msg.text ?? '')
+          recentTranscriptRef.current = [...recentTranscriptRef.current, text].slice(-5)
+          setSubtitles(prev => [...prev, text].slice(-MAX_SUBTITLES))
+
+        } else if (msg.type === 'room_closed') {
+          lessonEndedRef.current = true
+          setLessonEnded(true)
+          setReconnecting(false)
+          setTeacherReconnecting(false)
+
+        } else if (msg.type === 'teacher_disconnected') {
+          setTeacherReconnecting(true)
+
+        } else if (msg.type === 'teacher_reconnected') {
+          setTeacherReconnecting(false)
+        }
+
+      } catch { /* ignore malformed */ }
+    }
+
+    ws.onclose = () => {
+      if (wsRef.current !== ws) return  // we already moved on
+      wsRef.current = null
+
+      if (lessonEndedRef.current || userDisconnectedRef.current) return
+      if (stateRef.current !== 'active' && stateRef.current !== 'connecting') return
+
+      // Attempt reconnect
+      reconnectAttemptsRef.current += 1
+      if (reconnectAttemptsRef.current > MAX_RECONNECT_ATTEMPTS) {
+        const m = stateRef.current === 'connecting'
+          ? 'Не удалось подключиться к серверу'
+          : 'Соединение прервано после нескольких попыток'
+        setStateSynced('error')
+        setErrorMsg(m)
+        setReconnecting(false)
+        return
+      }
+
+      setReconnecting(true)
+      const delay = Math.min(
+        RECONNECT_BACKOFF_BASE_MS * Math.pow(2, reconnectAttemptsRef.current - 1),
+        32_000,
+      )
+      reconnectTimerRef.current = setTimeout(() => {
+        if (!lessonEndedRef.current && !userDisconnectedRef.current) {
+          connectWsRef.current?.(savedCodeRef.current, savedNameRef.current, true)
+        }
+      }, delay)
+    }
+
+    ws.onerror = () => { /* onclose handles it */ }
+  }, [setStateSynced])
+
+  useEffect(() => {
+    connectWsRef.current = connectWs
+  }, [connectWs])
+
   const connect = useCallback(() => {
     const name = nameInput.trim()
     if (!name) {
@@ -127,55 +234,26 @@ export default function StudentPage() {
     setLastSignal(null)
     resetQuestionState()
     lessonEndedRef.current = false
+    userDisconnectedRef.current = false
     setLessonEnded(false)
+    setReconnecting(false)
+    setTeacherReconnecting(false)
+    reconnectAttemptsRef.current = 0
 
-    const ws = new WebSocket(WS_URL)
-    wsRef.current = ws
+    savedCodeRef.current = codeInput
+    savedNameRef.current = name
+    setConnectedCode(codeInput)
+    setConnectedName(name)
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'register', role: 'student', code: codeInput, name }))
-    }
-
-    ws.onmessage = (event: MessageEvent<string>) => {
-      try {
-        const msg = JSON.parse(event.data) as Record<string, unknown>
-        if (msg.type === 'joined') {
-          try { localStorage.setItem(LS_NAME_KEY, name) } catch { /* */ }
-          setConnectedCode(codeInput)
-          setConnectedName(name)
-          setStateSynced('active')
-        } else if (msg.type === 'error') {
-          setErrorMsg(String(msg.message ?? 'Ошибка подключения'))
-          setStateSynced('error')
-          ws.onclose = null
-          ws.close()
-          wsRef.current = null
-        } else if (msg.type === 'transcript') {
-          const text = String(msg.text ?? '')
-          recentTranscriptRef.current = [...recentTranscriptRef.current, text].slice(-5)
-          setSubtitles(prev => [...prev, text])
-        } else if (msg.type === 'room_closed') {
-          lessonEndedRef.current = true
-          setLessonEnded(true)
-        }
-      } catch { /* ignore malformed */ }
-    }
-
-    ws.onclose = () => {
-      wsRef.current = null
-      if (!lessonEndedRef.current && (stateRef.current === 'active' || stateRef.current === 'connecting')) {
-        const m = stateRef.current === 'connecting'
-          ? 'Не удалось подключиться к серверу'
-          : 'Соединение прервано'
-        setStateSynced('error')
-        setErrorMsg(m)
-      }
-    }
-
-    ws.onerror = () => { /* onclose handles it */ }
-  }, [nameInput, codeInput, setStateSynced, resetQuestionState])
+    connectWs(codeInput, name, false)
+  }, [nameInput, codeInput, setStateSynced, resetQuestionState, connectWs])
 
   const disconnect = useCallback(() => {
+    userDisconnectedRef.current = true
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
     if (wsRef.current) {
       const ws = wsRef.current
       wsRef.current = null
@@ -194,15 +272,20 @@ export default function StudentPage() {
     resetQuestionState()
     lessonEndedRef.current = false
     setLessonEnded(false)
+    setReconnecting(false)
+    setTeacherReconnecting(false)
   }, [resetQuestionState])
 
   const retry = useCallback(() => {
+    userDisconnectedRef.current = false
     stateRef.current = 'idle'
     setState('idle')
     setErrorMsg('')
     setSignalCooldown(false)
     setLastSignal(null)
     resetQuestionState()
+    setReconnecting(false)
+    setTeacherReconnecting(false)
   }, [resetQuestionState])
 
   const sendSignal = useCallback((signalType: SignalType) => {
@@ -243,7 +326,7 @@ export default function StudentPage() {
       const res = await fetch(`${API_URL}/api/generate-questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript, language: studentLang }),
+        body: JSON.stringify({ transcript, language: studentLang, roomCode: connectedCode }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json() as { questions?: string[] }
@@ -255,7 +338,7 @@ export default function StudentPage() {
       setAiCooldown(true)
       setTimeout(() => setAiCooldown(false), 10_000)
     }
-  }, [aiCooldown, aiLoading, lessonEnded, studentLang])
+  }, [aiCooldown, aiLoading, lessonEnded, studentLang, connectedCode])
 
   const sendGesture = useCallback((letter: string) => {
     if (!wsRef.current || lessonEnded) return
@@ -271,13 +354,7 @@ export default function StudentPage() {
     const canConnect = nameInput.trim().length > 0 && codeInput.length === 6
     return (
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
-            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          </Link>
-          <ThemeToggle />
-        </header>
+        <SiteHeader />
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="w-full max-w-sm space-y-6">
             <div className="text-center">
@@ -285,12 +362,8 @@ export default function StudentPage() {
             </div>
 
             <div className="space-y-4">
-              {/* Name input */}
               <div className="space-y-2">
-                <label
-                  htmlFor="name-input"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
+                <label htmlFor="name-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   {t.yourName}
                 </label>
                 <input
@@ -298,10 +371,7 @@ export default function StudentPage() {
                   type="text"
                   maxLength={50}
                   value={nameInput}
-                  onChange={e => {
-                    setNameInput(e.target.value)
-                    setErrorMsg('')
-                  }}
+                  onChange={e => { setNameInput(e.target.value); setErrorMsg('') }}
                   onKeyDown={e => e.key === 'Enter' && connect()}
                   placeholder={t.nameExample}
                   className="w-full text-xl py-3 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
@@ -309,7 +379,6 @@ export default function StudentPage() {
                 />
               </div>
 
-              {/* Language picker */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Язык интерфейса
@@ -332,12 +401,8 @@ export default function StudentPage() {
                 </div>
               </div>
 
-              {/* Code input */}
               <div className="space-y-2">
-                <label
-                  htmlFor="code-input"
-                  className="block text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
+                <label htmlFor="code-input" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                   {t.lessonCode}
                 </label>
                 <input
@@ -346,10 +411,7 @@ export default function StudentPage() {
                   inputMode="numeric"
                   maxLength={6}
                   value={codeInput}
-                  onChange={e => {
-                    setCodeInput(e.target.value.replace(/\D/g, ''))
-                    setErrorMsg('')
-                  }}
+                  onChange={e => { setCodeInput(e.target.value.replace(/\D/g, '')); setErrorMsg('') }}
                   onKeyDown={e => e.key === 'Enter' && connect()}
                   placeholder="123456"
                   className="w-full text-4xl font-mono text-center py-4 px-4 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white tracking-widest focus:outline-none focus:border-blue-500 transition-colors"
@@ -378,13 +440,7 @@ export default function StudentPage() {
   if (state === 'connecting') {
     return (
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
-            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          </Link>
-          <ThemeToggle />
-        </header>
+        <SiteHeader />
         <main className="flex-1 flex items-center justify-center bg-white dark:bg-gray-950">
           <div className="text-center space-y-3">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -399,13 +455,7 @@ export default function StudentPage() {
   if (state === 'error') {
     return (
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
-            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          </Link>
-          <ThemeToggle />
-        </header>
+        <SiteHeader />
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="text-center space-y-4 max-w-sm">
             <p className="text-xl font-semibold text-red-600">{t.error}</p>
@@ -431,6 +481,11 @@ export default function StudentPage() {
         <div className="flex items-center gap-2 min-w-0">
           {lessonEnded ? (
             <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">{t.lessonEnded}</span>
+          ) : reconnecting ? (
+            <>
+              <span className="w-2.5 h-2.5 bg-yellow-400 rounded-full animate-pulse shrink-0" />
+              <span className="text-sm text-yellow-600 dark:text-yellow-400 font-medium truncate">{t.reconnecting}</span>
+            </>
           ) : (
             <>
               <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0" />
@@ -450,6 +505,15 @@ export default function StudentPage() {
           </button>
         </div>
       </header>
+
+      {/* Teacher reconnecting banner */}
+      {teacherReconnecting && !lessonEnded && (
+        <div className="sticky top-[53px] z-10 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800 px-4 py-2 text-center">
+          <span className="text-sm text-yellow-700 dark:text-yellow-400 font-medium">
+            {t.teacherReconnecting}
+          </span>
+        </div>
+      )}
 
       <div
         className="flex-1 overflow-y-auto px-5 py-8 space-y-6"
@@ -485,20 +549,14 @@ export default function StudentPage() {
                   <span className="text-sm text-gray-500 dark:text-gray-400">{t.aiThinking}</span>
                 </div>
               ) : aiQuestions.length === 0 ? (
-                <p className="text-center text-sm text-gray-500 py-3">
-                  {t.aiNoQuestions}
-                </p>
+                <p className="text-center text-sm text-gray-500 py-3">{t.aiNoQuestions}</p>
               ) : (
                 <div className="space-y-1.5">
                   <p className="text-xs text-gray-500 mb-2">{t.aiSelectOrWrite}</p>
                   {aiQuestions.map((q, i) => (
                     <button
                       key={i}
-                      onClick={() => {
-                        setQuestionText(q)
-                        setQuestionOpen(true)
-                        setAiPanelOpen(false)
-                      }}
+                      onClick={() => { setQuestionText(q); setQuestionOpen(true); setAiPanelOpen(false) }}
                       className="w-full text-left text-sm text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 px-3 py-2 rounded-lg transition-colors"
                     >
                       {q}
@@ -535,9 +593,7 @@ export default function StudentPage() {
                 style={{ minHeight: '80px', maxHeight: '160px' }}
               />
               <div className="flex items-center justify-between mt-2">
-                <span className="text-xs text-gray-500">
-                  {questionText.length} / {MAX_QUESTION_LEN}
-                </span>
+                <span className="text-xs text-gray-500">{questionText.length} / {MAX_QUESTION_LEN}</span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => { setQuestionOpen(false); setQuestionText('') }}
@@ -619,7 +675,6 @@ export default function StudentPage() {
             })}
           </div>
         </div>
-
       </div>
 
       {gestureToast && (
@@ -631,11 +686,12 @@ export default function StudentPage() {
         </div>
       )}
 
-      <GestureMockModal
-        isOpen={gestureOpen}
-        onClose={() => setGestureOpen(false)}
-        onSendGesture={sendGesture}
-      />
+      {gestureOpen && (
+        <GestureMockModal
+          onClose={() => setGestureOpen(false)}
+          onSendGesture={sendGesture}
+        />
+      )}
     </main>
   )
 }

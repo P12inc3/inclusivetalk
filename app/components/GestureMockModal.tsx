@@ -5,12 +5,11 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 const MOCK_LETTERS = ['А', 'Б', 'В', 'Г', 'Д', 'Е', 'Ж', 'З', 'И', 'К']
 
 interface Props {
-  isOpen: boolean
   onClose: () => void
   onSendGesture: (letter: string) => void
 }
 
-export default function GestureMockModal({ isOpen, onClose, onSendGesture }: Props) {
+export default function GestureMockModal({ onClose, onSendGesture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraError, setCameraError] = useState(false)
@@ -28,14 +27,6 @@ export default function GestureMockModal({ isOpen, onClose, onSendGesture }: Pro
   }, [])
 
   useEffect(() => {
-    if (!isOpen) {
-      stopCamera()
-      setCameraError(false)
-      setRecognizing(false)
-      setRecognizedLetter(null)
-      return
-    }
-
     let cancelled = false
     navigator.mediaDevices
       .getUserMedia({ video: true })
@@ -55,8 +46,9 @@ export default function GestureMockModal({ isOpen, onClose, onSendGesture }: Pro
 
     return () => {
       cancelled = true
+      stopCamera()
     }
-  }, [isOpen, stopCamera])
+  }, [stopCamera])
 
   const handleRecognize = useCallback(() => {
     if (recognizing) return
@@ -79,8 +71,6 @@ export default function GestureMockModal({ isOpen, onClose, onSendGesture }: Pro
   const handleRetry = useCallback(() => {
     setRecognizedLetter(null)
   }, [])
-
-  if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

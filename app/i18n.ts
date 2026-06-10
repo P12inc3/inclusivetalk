@@ -52,6 +52,8 @@ export const UI_LABELS: Record<Lang, Record<string, string>> = {
     retry: 'Попробовать снова',
     lessonEnded: 'Урок завершён',
     collapse: 'Свернуть',
+    reconnecting: 'Переподключение...',
+    teacherReconnecting: 'Преподаватель переподключается...',
   },
   kk: {
     suggestQuestion: '💡 Сұрақ ұсыну',
@@ -80,6 +82,8 @@ export const UI_LABELS: Record<Lang, Record<string, string>> = {
     retry: 'Қайталап көру',
     lessonEnded: 'Сабақ аяқталды',
     collapse: 'Жабу',
+    reconnecting: 'Қайта қосылуда...',
+    teacherReconnecting: 'Мұғалім қайта қосылуда...',
   },
   en: {
     suggestQuestion: '💡 Suggest question',
@@ -108,5 +112,7 @@ export const UI_LABELS: Record<Lang, Record<string, string>> = {
     retry: 'Try again',
     lessonEnded: 'Lesson ended',
     collapse: 'Collapse',
+    reconnecting: 'Reconnecting...',
+    teacherReconnecting: 'Teacher reconnecting...',
   },
 }

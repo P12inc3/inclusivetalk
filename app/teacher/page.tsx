@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { FeedbackItem, SignalType, StudentInfo } from '../types'
 import ThemeToggle from '../components/ThemeToggle'
+import SiteHeader from '../components/SiteHeader'
 
 type LessonState = 'idle' | 'connecting' | 'active' | 'stopped' | 'error'
 type Language = 'ru-RU' | 'kk-KZ' | 'en-US'
@@ -34,6 +35,12 @@ const VALID_SIGNAL_TYPES: SignalType[] = ['confused', 'repeat', 'slow', 'questio
 const AVATAR_COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500',
 ]
+
+// Reconnect constants
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_BACKOFF_BASE_MS = 1_000
+
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws'
 
 function getAvatarColor(name: string): string {
   let hash = 0
@@ -67,7 +74,9 @@ function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString()
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3001/ws'
+function tokenStorageKey(code: string): string {
+  return `inclusivetalk_teacher_token_${code}`
+}
 
 export default function TeacherPage() {
   const [state, setState] = useState<LessonState>('idle')
@@ -75,6 +84,7 @@ export default function TeacherPage() {
   const [code, setCode] = useState('')
   const [transcript, setTranscript] = useState('')
   const [connected, setConnected] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -94,10 +104,14 @@ export default function TeacherPage() {
   const isLiveRef = useRef(false)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const joinToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptsRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const codeRef = useRef('')
+  const languageRef = useRef<Language>('ru-RU')
+  // Used to call connectWs from within its own onclose without circular dep
+  const connectWsRef = useRef<((roomCode: string, lang: Language, token: string | null) => void) | null>(null)
 
-  const stopAll = useCallback(() => {
-    isLiveRef.current = false
-
+  const stopRecognition = useCallback(() => {
     if (recognitionRef.current) {
       const r = recognitionRef.current
       recognitionRef.current = null
@@ -106,7 +120,9 @@ export default function TeacherPage() {
       r.onresult = null
       try { r.stop() } catch { /* already stopped */ }
     }
+  }, [])
 
+  const closeWs = useCallback(() => {
     if (wsRef.current) {
       const ws = wsRef.current
       wsRef.current = null
@@ -117,6 +133,16 @@ export default function TeacherPage() {
       ws.close()
     }
   }, [])
+
+  const stopAll = useCallback(() => {
+    isLiveRef.current = false
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    stopRecognition()
+    closeWs()
+  }, [stopRecognition, closeWs])
 
   useEffect(() => () => {
     stopAll()
@@ -129,32 +155,20 @@ export default function TeacherPage() {
     return () => clearInterval(id)
   }, [])
 
-  const startLesson = useCallback(() => {
-    const SpeechAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
-    if (!SpeechAPI) {
-      setState('error')
-      setErrorMsg('Используйте Chrome или Edge — ваш браузер не поддерживает Web Speech API')
-      return
-    }
-
-    const roomCode = generateCode()
-    setCode(roomCode)
-    setTranscript('')
-    setConnected(false)
-    setSignals([])
-    setUnreadCount(0)
-    setToast(null)
-    setSignalPanelOpen(false)
-    setStudents([])
-    setStudentPanelOpen(false)
-    setJoinToast(null)
-    setState('connecting')
-
+  const connectWs = useCallback((roomCode: string, lang: Language, token: string | null) => {
+    closeWs()
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'register', role: 'teacher', code: roomCode, language: LANGUAGE_SHORT[language] }))
+      const msg: Record<string, unknown> = {
+        type: 'register',
+        role: 'teacher',
+        code: roomCode,
+        language: LANGUAGE_SHORT[lang],
+      }
+      if (token) msg.token = token
+      ws.send(JSON.stringify(msg))
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
@@ -162,11 +176,17 @@ export default function TeacherPage() {
         const msg = JSON.parse(event.data) as Record<string, unknown>
 
         if (msg.type === 'registered') {
-          isLiveRef.current = true
+          // Store/update teacher token in sessionStorage
+          const teacherToken = String(msg.teacherToken ?? '')
+          if (teacherToken) {
+            try { sessionStorage.setItem(tokenStorageKey(roomCode), teacherToken) } catch { /* */ }
+          }
+
+          reconnectAttemptsRef.current = 0
+          setReconnecting(false)
           setState('active')
           setConnected(true)
 
-          // Restore existing students if teacher reconnected mid-lesson
           const rawStudents = msg.students
           if (Array.isArray(rawStudents)) {
             setStudents(
@@ -181,36 +201,43 @@ export default function TeacherPage() {
             )
           }
 
-          const recognition = new SpeechAPI()
-          recognition.lang = language
-          recognition.continuous = true
-          recognition.interimResults = true
-          recognitionRef.current = recognition
+          // Start speech recognition only once (not on reconnect)
+          if (!recognitionRef.current) {
+            const SpeechAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
+            if (!SpeechAPI) return
+            isLiveRef.current = true
 
-          recognition.onresult = (evt: SpeechRecognitionEvent) => {
-            for (let i = evt.resultIndex; i < evt.results.length; i++) {
-              if (evt.results[i].isFinal) {
-                const text = evt.results[i][0].transcript.trim()
-                if (!text) continue
-                setTranscript(prev => prev + text + ' ')
-                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({ type: 'transcript', code: roomCode, text }))
+            const recognition = new SpeechAPI()
+            recognition.lang = lang
+            recognition.continuous = true
+            recognition.interimResults = true
+            recognitionRef.current = recognition
+
+            recognition.onresult = (evt: SpeechRecognitionEvent) => {
+              for (let i = evt.resultIndex; i < evt.results.length; i++) {
+                if (evt.results[i].isFinal) {
+                  const text = evt.results[i][0].transcript.trim()
+                  if (!text) continue
+                  setTranscript(prev => prev + text + ' ')
+                  if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ type: 'transcript', code: roomCode, text }))
+                  }
                 }
               }
             }
-          }
 
-          recognition.onerror = (evt: SpeechRecognitionErrorEvent) => {
-            if (evt.error !== 'no-speech') console.log(`[Speech] Error: ${evt.error}`)
-          }
-
-          recognition.onend = () => {
-            if (isLiveRef.current) {
-              try { recognition.start() } catch { /* already restarting */ }
+            recognition.onerror = (evt: SpeechRecognitionErrorEvent) => {
+              if (evt.error !== 'no-speech') console.log(`[Speech] Error: ${evt.error}`)
             }
-          }
 
-          recognition.start()
+            recognition.onend = () => {
+              if (isLiveRef.current) {
+                try { recognition.start() } catch { /* already restarting */ }
+              }
+            }
+
+            recognition.start()
+          }
 
         } else if (msg.type === 'error') {
           stopAll()
@@ -233,7 +260,6 @@ export default function TeacherPage() {
         } else if (msg.type === 'signal') {
           const signalType = msg.signalType as SignalType
           if (!VALID_SIGNAL_TYPES.includes(signalType)) return
-
           const item: FeedbackItem = {
             id: crypto.randomUUID(),
             kind: 'signal',
@@ -242,7 +268,6 @@ export default function TeacherPage() {
             studentId: String(msg.studentId ?? ''),
             studentName: String(msg.name ?? 'Студент'),
           }
-
           setSignals(prev => [item, ...prev].slice(0, 10))
           setUnreadCount(prev => prev + 1)
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -253,7 +278,6 @@ export default function TeacherPage() {
         } else if (msg.type === 'question') {
           const text = String(msg.text ?? '').trim()
           if (!text) return
-
           const item: FeedbackItem = {
             id: crypto.randomUUID(),
             kind: 'question',
@@ -262,7 +286,6 @@ export default function TeacherPage() {
             studentId: String(msg.studentId ?? ''),
             studentName: String(msg.name ?? 'Студент'),
           }
-
           setSignals(prev => [item, ...prev].slice(0, 10))
           setUnreadCount(prev => prev + 1)
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -273,7 +296,6 @@ export default function TeacherPage() {
         } else if (msg.type === 'gesture') {
           const letter = String(msg.letter ?? '').trim()
           if (!letter) return
-
           const item: FeedbackItem = {
             id: crypto.randomUUID(),
             kind: 'gesture',
@@ -282,7 +304,6 @@ export default function TeacherPage() {
             studentId: String(msg.studentId ?? ''),
             studentName: String(msg.name ?? 'Студент'),
           }
-
           setSignals(prev => [item, ...prev].slice(0, 10))
           setUnreadCount(prev => prev + 1)
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -295,26 +316,71 @@ export default function TeacherPage() {
 
     ws.onclose = () => {
       setConnected(false)
-      if (wsRef.current === ws) {
+      if (wsRef.current !== ws) return  // we already moved on (closeWs called)
+      wsRef.current = null
+
+      if (!isLiveRef.current) return    // user stopped the lesson
+
+      // Attempt reconnect with exponential backoff
+      reconnectAttemptsRef.current += 1
+      if (reconnectAttemptsRef.current > MAX_RECONNECT_ATTEMPTS) {
         stopAll()
         setState('error')
-        setErrorMsg('Соединение с сервером прервано')
+        setErrorMsg('Соединение с сервером прервано после нескольких попыток')
+        return
       }
+
+      setReconnecting(true)
+      const delay = Math.min(
+        RECONNECT_BACKOFF_BASE_MS * Math.pow(2, reconnectAttemptsRef.current - 1),
+        32_000,
+      )
+      const savedToken = sessionStorage.getItem(tokenStorageKey(roomCode)) ?? null
+      reconnectTimerRef.current = setTimeout(() => {
+        if (isLiveRef.current) connectWsRef.current?.(roomCode, languageRef.current, savedToken)
+      }, delay)
     }
 
-    ws.onerror = () => {
-      setConnected(false)
-      if (wsRef.current === ws) {
-        stopAll()
-        setState('error')
-        setErrorMsg('Не удалось подключиться к серверу')
-      }
+    ws.onerror = () => { /* onclose handles it */ }
+  }, [closeWs, stopAll])
+
+  // Keep ref in sync so onclose can call connectWs without circular dep
+  useEffect(() => {
+    connectWsRef.current = connectWs
+  }, [connectWs])
+
+  const startLesson = useCallback(() => {
+    const SpeechAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
+    if (!SpeechAPI) {
+      setState('error')
+      setErrorMsg('Используйте Chrome или Edge — ваш браузер не поддерживает Web Speech API')
+      return
     }
-  }, [stopAll, language])
+
+    const roomCode = generateCode()
+    codeRef.current = roomCode
+    languageRef.current = language
+    setCode(roomCode)
+    setTranscript('')
+    setConnected(false)
+    setReconnecting(false)
+    setSignals([])
+    setUnreadCount(0)
+    setToast(null)
+    setSignalPanelOpen(false)
+    setStudents([])
+    setStudentPanelOpen(false)
+    setJoinToast(null)
+    reconnectAttemptsRef.current = 0
+    setState('connecting')
+
+    connectWs(roomCode, language, null)
+  }, [language, connectWs])
 
   const stopLesson = useCallback(() => {
     stopAll()
     setConnected(false)
+    setReconnecting(false)
     setState('stopped')
   }, [stopAll])
 
@@ -329,6 +395,7 @@ export default function TeacherPage() {
     setToast(null)
     setStudents([])
     setJoinToast(null)
+    setReconnecting(false)
   }, [stopAll])
 
   const copyCode = useCallback(async () => {
@@ -348,41 +415,35 @@ export default function TeacherPage() {
   if (state === 'idle' || state === 'stopped') {
     return (
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
-            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          </Link>
-          <ThemeToggle />
-        </header>
+        <SiteHeader />
         <main className="flex-1 flex items-center justify-center px-4">
-        <div className="text-center space-y-6">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Преподаватель</h1>
-          <div className="space-y-2">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Язык урока</p>
-            <div className="flex flex-col sm:flex-row gap-2 justify-center">
-              {(['ru-RU', 'kk-KZ', 'en-US'] as const).map(lang => (
-                <button
-                  key={lang}
-                  onClick={() => setLanguage(lang)}
-                  className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors ${
-                    language === lang
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200 text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-500'
-                  }`}
-                >
-                  {LANGUAGE_LABELS[lang]}
-                </button>
-              ))}
+          <div className="text-center space-y-6">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Преподаватель</h1>
+            <div className="space-y-2">
+              <p className="text-sm text-gray-500 dark:text-gray-400">Язык урока</p>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                {(['ru-RU', 'kk-KZ', 'en-US'] as const).map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => setLanguage(lang)}
+                    className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors ${
+                      language === lang
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-500'
+                    }`}
+                  >
+                    {LANGUAGE_LABELS[lang]}
+                  </button>
+                ))}
+              </div>
             </div>
+            <button
+              onClick={startLesson}
+              className="block mx-auto px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg font-medium rounded-2xl transition-colors"
+            >
+              Начать урок
+            </button>
           </div>
-          <button
-            onClick={startLesson}
-            className="block mx-auto px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white text-lg font-medium rounded-2xl transition-colors"
-          >
-            Начать урок
-          </button>
-        </div>
         </main>
       </div>
     )
@@ -392,13 +453,7 @@ export default function TeacherPage() {
   if (state === 'error') {
     return (
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-950">
-        <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/logorb.svg" alt="InclusiveTalk" width={36} height={36} className="rounded-lg dark:brightness-0 dark:invert" />
-            <span className="text-lg font-bold text-gray-900 dark:text-white">InclusiveTalk</span>
-          </Link>
-          <ThemeToggle />
-        </header>
+        <SiteHeader />
         <main className="flex-1 flex items-center justify-center px-4">
           <div className="text-center space-y-4 max-w-sm">
             <p className="text-xl font-semibold text-red-600">Ошибка</p>
@@ -492,14 +547,10 @@ export default function TeacherPage() {
           if (item.kind === 'question') {
             return (
               <div key={item.id} className="flex gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white text-sm shrink-0">
-                  ✍
-                </span>
+                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white text-sm shrink-0">✍</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 font-medium">{item.studentName}</p>
-                  <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed break-words whitespace-pre-wrap">
-                    «{item.questionText}»
-                  </p>
+                  <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed break-words whitespace-pre-wrap">«{item.questionText}»</p>
                   <p className="text-xs text-gray-400 mt-1">{formatTime(item.timestamp)}</p>
                 </div>
               </div>
@@ -508,13 +559,9 @@ export default function TeacherPage() {
           if (item.kind === 'gesture') {
             return (
               <div key={item.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
-                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-violet-600 text-white text-sm shrink-0">
-                  🤚
-                </span>
+                <span className="w-8 h-8 flex items-center justify-center rounded-full bg-violet-600 text-white text-sm shrink-0">🤚</span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                    {item.studentName}: показал жест «{item.gestureLetter}»
-                  </p>
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{item.studentName}: показал жест «{item.gestureLetter}»</p>
                   <p className="text-xs text-gray-400">{formatTime(item.timestamp)}</p>
                 </div>
               </div>
@@ -523,13 +570,9 @@ export default function TeacherPage() {
           const cfg = SIGNAL_CONFIG[item.signalType!]
           return (
             <div key={item.id} className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 last:border-0">
-              <span className={`w-8 h-8 flex items-center justify-center rounded-full text-white text-sm shrink-0 ${cfg.bg}`}>
-                {cfg.icon}
-              </span>
+              <span className={`w-8 h-8 flex items-center justify-center rounded-full text-white text-sm shrink-0 ${cfg.bg}`}>{cfg.icon}</span>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                  {item.studentName}: {cfg.label}
-                </p>
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{item.studentName}: {cfg.label}</p>
                 <p className="text-xs text-gray-400">{formatTime(item.timestamp)}</p>
               </div>
             </div>
@@ -540,9 +583,17 @@ export default function TeacherPage() {
   )
 
   // ── Active ─────────────────────────────────────────────────────────────────
+  const statusDot = connected
+    ? 'bg-green-500'
+    : 'bg-yellow-400'
+  const statusText = connected
+    ? 'Подключено'
+    : reconnecting
+    ? 'Переподключение...'
+    : 'Нет связи'
+
   return (
     <>
-      {/* Main content */}
       <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
@@ -564,17 +615,13 @@ export default function TeacherPage() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Код урока</span>
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full transition-colors ${connected ? 'bg-green-500' : 'bg-yellow-400'}`} />
-              <span className="text-sm text-gray-600 dark:text-gray-300">
-                {connected ? 'Подключено' : 'Нет связи'}
-              </span>
+              <span className={`w-2 h-2 rounded-full transition-colors ${statusDot}`} />
+              <span className="text-sm text-gray-600 dark:text-gray-300">{statusText}</span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-5xl font-mono font-bold text-gray-900 dark:text-white tracking-widest">
-              {code}
-            </span>
+            <span className="text-5xl font-mono font-bold text-gray-900 dark:text-white tracking-widest">{code}</span>
             <button
               onClick={copyCode}
               className="px-3 py-1.5 text-sm bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-900/70 text-blue-700 dark:text-blue-300 rounded-lg transition-colors"
@@ -595,9 +642,7 @@ export default function TeacherPage() {
         <div className="flex-1 bg-gray-50 dark:bg-gray-900 rounded-2xl p-6 min-h-64">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Транскрипт</p>
           {transcript ? (
-            <p className="text-gray-800 dark:text-gray-200 text-lg leading-relaxed whitespace-pre-wrap">
-              {transcript}
-            </p>
+            <p className="text-gray-800 dark:text-gray-200 text-lg leading-relaxed whitespace-pre-wrap">{transcript}</p>
           ) : (
             <p className="text-gray-400 italic">Говорите — текст появится здесь...</p>
           )}
@@ -606,8 +651,6 @@ export default function TeacherPage() {
 
       {/* Desktop right sidebar */}
       <aside className="hidden md:flex fixed top-0 right-0 bottom-0 w-72 flex-col bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 z-20">
-
-        {/* Students section */}
         <div className="flex flex-col" style={{ maxHeight: '40%' }}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Студенты в классе</span>
@@ -615,14 +658,11 @@ export default function TeacherPage() {
               {students.length}
             </span>
           </div>
-          <div className="overflow-y-auto flex-1">
-            {studentListContent}
-          </div>
+          <div className="overflow-y-auto flex-1">{studentListContent}</div>
         </div>
 
         <div className="border-t border-gray-200 dark:border-gray-700 shrink-0" />
 
-        {/* Signals section */}
         <div className="flex flex-col flex-1 min-h-0">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Сигналы</span>
@@ -632,9 +672,7 @@ export default function TeacherPage() {
               </span>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {signalListContent}
-          </div>
+          <div className="flex-1 overflow-y-auto">{signalListContent}</div>
           <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 shrink-0">
             <button
               onClick={clearSignals}
@@ -646,7 +684,7 @@ export default function TeacherPage() {
         </div>
       </aside>
 
-      {/* Mobile: students floating button (bottom-left) */}
+      {/* Mobile: students floating button */}
       <div className="md:hidden fixed bottom-4 left-4 z-40">
         <button
           onClick={() => { setStudentPanelOpen(v => !v); setSignalPanelOpen(false) }}
@@ -657,7 +695,6 @@ export default function TeacherPage() {
         </button>
       </div>
 
-      {/* Mobile: students bottom sheet */}
       {studentPanelOpen && (
         <div className="md:hidden fixed bottom-16 left-0 right-0 z-30 bg-white dark:bg-gray-900 rounded-t-2xl border-t border-gray-200 dark:border-gray-700 shadow-2xl max-h-72 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 shrink-0">
@@ -667,20 +704,13 @@ export default function TeacherPage() {
                 {students.length}
               </span>
             </span>
-            <button
-              onClick={() => setStudentPanelOpen(false)}
-              className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-lg leading-none"
-            >
-              ✕
-            </button>
+            <button onClick={() => setStudentPanelOpen(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-lg leading-none">✕</button>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {studentListContent}
-          </div>
+          <div className="flex-1 overflow-y-auto">{studentListContent}</div>
         </div>
       )}
 
-      {/* Mobile: signals floating button (bottom-right) */}
+      {/* Mobile: signals floating button */}
       <div className="md:hidden fixed bottom-4 right-4 z-40">
         <button
           onClick={() => { setSignalPanelOpen(v => !v); setStudentPanelOpen(false) }}
@@ -691,28 +721,18 @@ export default function TeacherPage() {
         </button>
       </div>
 
-      {/* Mobile: signals bottom sheet */}
       {signalPanelOpen && (
         <div className="md:hidden fixed bottom-16 left-0 right-0 z-30 bg-white dark:bg-gray-900 rounded-t-2xl border-t border-gray-200 dark:border-gray-700 shadow-2xl max-h-72 flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800 shrink-0">
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
               Сигналы от студентов
               {unreadCount > 0 && (
-                <span className="ml-2 bg-blue-600 text-white text-xs font-bold rounded-full px-2 py-0.5">
-                  {unreadCount}
-                </span>
+                <span className="ml-2 bg-blue-600 text-white text-xs font-bold rounded-full px-2 py-0.5">{unreadCount}</span>
               )}
             </span>
-            <button
-              onClick={() => setSignalPanelOpen(false)}
-              className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-lg leading-none"
-            >
-              ✕
-            </button>
+            <button onClick={() => setSignalPanelOpen(false)} className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-lg leading-none">✕</button>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {signalListContent}
-          </div>
+          <div className="flex-1 overflow-y-auto">{signalListContent}</div>
           <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 shrink-0">
             <button
               onClick={() => { clearSignals(); setSignalPanelOpen(false) }}
@@ -724,7 +744,6 @@ export default function TeacherPage() {
         </div>
       )}
 
-      {/* Toast: signal / question (top-right) */}
       {toast && (
         <div
           role="alert"
@@ -739,11 +758,7 @@ export default function TeacherPage() {
           ].join(' ')}
         >
           <span className="text-xl shrink-0">
-            {toast.kind === 'question'
-              ? '✍'
-              : toast.kind === 'gesture'
-              ? '🤚'
-              : SIGNAL_CONFIG[toast.signalType!].icon}
+            {toast.kind === 'question' ? '✍' : toast.kind === 'gesture' ? '🤚' : SIGNAL_CONFIG[toast.signalType!].icon}
           </span>
           <div className="min-w-0">
             <p className="font-medium text-sm leading-snug break-words">
@@ -757,7 +772,6 @@ export default function TeacherPage() {
         </div>
       )}
 
-      {/* Toast: student joined (bottom-left) */}
       {joinToast && (
         <div className="fixed bottom-20 left-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl bg-gray-800 text-white max-w-xs md:bottom-4">
           <span className="text-lg">👋</span>
