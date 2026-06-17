@@ -594,7 +594,7 @@ export default function TeacherPage() {
 
   return (
     <>
-      <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto bg-white dark:bg-gray-950">
+      <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto md:mr-72 md:max-w-3xl bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
             <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md dark:brightness-0 dark:invert" />
