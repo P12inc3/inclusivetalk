@@ -649,10 +649,11 @@ export default function StudentPage() {
           )}
         </div>
 
-        <div className="px-2 py-2">
-          <div className="grid grid-cols-5 gap-1 max-w-2xl mx-auto">
-            {SIGNALS.map(({ type, icon, color }) => {
+        <div className="flex flex-col px-2 py-2 pb-6">
+          <div className="grid grid-cols-2 gap-2 max-w-md mx-auto w-full">
+            {SIGNALS.map(({ type, icon, color }, idx) => {
               const sent = lastSignal === type
+              const isLast = idx === SIGNALS.length - 1
               return (
                 <button
                   key={type}
@@ -660,14 +661,15 @@ export default function StudentPage() {
                   disabled={signalCooldown || lessonEnded}
                   className={[
                     'flex flex-col items-center justify-center gap-0.5',
-                    'min-h-[64px] rounded-xl text-white font-medium',
+                    'min-h-[88px] h-full rounded-xl text-white font-semibold',
                     'transition-transform duration-100 active:scale-95',
                     color,
+                    isLast ? 'col-span-2' : '',
                     signalCooldown || lessonEnded ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
                   ].join(' ')}
                 >
-                  <span className="text-2xl leading-none">{icon}</span>
-                  <span className="text-[10px] leading-tight text-center px-0.5">
+                  <span className="text-4xl leading-none">{icon}</span>
+                  <span className="text-base leading-tight text-center px-1">
                     {sent ? t.signalSent : SIGNAL_LABELS[studentLang][type]}
                   </span>
                 </button>

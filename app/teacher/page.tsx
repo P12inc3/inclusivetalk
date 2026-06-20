@@ -593,8 +593,8 @@ export default function TeacherPage() {
     : 'Нет связи'
 
   return (
-    <>
-      <main className="min-h-screen flex flex-col px-4 py-6 max-w-2xl mx-auto md:mr-72 md:max-w-3xl bg-white dark:bg-gray-950">
+    <div className="flex min-h-screen">
+      <main className="flex-1 min-w-0 flex flex-col px-4 py-6 bg-white dark:bg-gray-950">
         <div className="flex items-center justify-between mb-6">
           <Link href="/" className="flex items-center gap-2">
             <Image src="/logorb.svg" alt="InclusiveTalk" width={32} height={32} className="rounded-md dark:brightness-0 dark:invert" />
@@ -650,7 +650,7 @@ export default function TeacherPage() {
       </main>
 
       {/* Desktop right sidebar */}
-      <aside className="hidden md:flex fixed top-0 right-0 bottom-0 w-72 flex-col bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 z-20">
+      <aside className="hidden md:flex w-72 shrink-0 flex-col bg-gray-50 dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
         <div className="flex flex-col" style={{ maxHeight: '40%' }}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
             <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Студенты в классе</span>
@@ -778,6 +778,6 @@ export default function TeacherPage() {
           <p className="text-sm font-medium">{joinToast.name} присоединился</p>
         </div>
       )}
-    </>
+    </div>
   )
 }
